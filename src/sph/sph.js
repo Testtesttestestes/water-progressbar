@@ -93,6 +93,14 @@ let _progress = 1.0;
 let _time = 0.0;
 let _waveAmplitude = 0.0;
 
+let _containerPosition = Vec2.zero();
+let _containerVelocity = Vec2.zero();
+let _containerAcceleration = Vec2.zero();
+let _containerAngle = 0.0;
+let _containerAngularVelocity = 0.0;
+let _containerAngularAcceleration = 0.0;
+let _reverseImpulse = 0.0;
+
 const _helper = {
     sampleParticles5x5: (dp) => {
         let p = [];
@@ -168,6 +176,24 @@ export const injectWater = (volumeRatio) => {
 export const setAnimationParams = (time, waveAmplitude) => {
     _time = time;
     _waveAmplitude = waveAmplitude;
+};
+
+export const setContainerKinematics = ({
+    position,
+    velocity,
+    acceleration,
+    angle,
+    angularVelocity,
+    angularAcceleration,
+    reverseImpulse,
+}) => {
+    _containerPosition = position;
+    _containerVelocity = velocity;
+    _containerAcceleration = acceleration;
+    _containerAngle = angle;
+    _containerAngularVelocity = angularVelocity;
+    _containerAngularAcceleration = angularAcceleration;
+    _reverseImpulse = reverseImpulse;
 };
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -326,6 +352,13 @@ const _calcPressure = () => {
     _calcPressureFBO.bind();
     _gl.uniform1f(_calcPressureProgram.uniform('u_time'), _time);
     _gl.uniform1f(_calcPressureProgram.uniform('u_wave_amplitude'), _waveAmplitude);
+    _gl.uniform2f(_calcPressureProgram.uniform('u_container_position'), _containerPosition.x, _containerPosition.y);
+    _gl.uniform2f(_calcPressureProgram.uniform('u_container_velocity'), _containerVelocity.x, _containerVelocity.y);
+    _gl.uniform2f(_calcPressureProgram.uniform('u_container_acceleration'), _containerAcceleration.x, _containerAcceleration.y);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_container_angle'), _containerAngle);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_container_angular_velocity'), _containerAngularVelocity);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_container_angular_acceleration'), _containerAngularAcceleration);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_reverse_impulse'), _reverseImpulse);
     GLU.bindTextureUniform(_gl, 0, _calcPressureProgram.uniform('intPosTex'),       _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 1, _calcPressureProgram.uniform('velTex'),          _posVelReadFBO.texture('vel'));
     GLU.bindTextureUniform(_gl, 2, _calcPressureProgram.uniform('cellBeginEndTex'), _cellBeginEndFBO.texture('cellBeginEnd'));
@@ -343,6 +376,13 @@ const _updateParticles = () => {
     _gl.uniform1f(_updateParticlesProgram.uniform('particleCount'), _particleCount);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_time'), _time);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_wave_amplitude'), _waveAmplitude);
+    _gl.uniform2f(_updateParticlesProgram.uniform('u_container_position'), _containerPosition.x, _containerPosition.y);
+    _gl.uniform2f(_updateParticlesProgram.uniform('u_container_velocity'), _containerVelocity.x, _containerVelocity.y);
+    _gl.uniform2f(_updateParticlesProgram.uniform('u_container_acceleration'), _containerAcceleration.x, _containerAcceleration.y);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_container_angle'), _containerAngle);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_container_angular_velocity'), _containerAngularVelocity);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_container_angular_acceleration'), _containerAngularAcceleration);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse'), _reverseImpulse);
     GLU.bindTextureUniform(_gl, 0, _updateParticlesProgram.uniform('posTex'),          _posVelReadFBO.texture('posVelh'));
     GLU.bindTextureUniform(_gl, 1, _updateParticlesProgram.uniform('intPosTex'),       _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 2, _updateParticlesProgram.uniform('velTex'),          _calcPressureFBO.texture('tex'));

@@ -37,6 +37,13 @@ uniform float u_progress;
 uniform float particleCount;
 uniform float u_time;
 uniform float u_wave_amplitude;
+uniform vec2 u_container_position;
+uniform vec2 u_container_velocity;
+uniform vec2 u_container_acceleration;
+uniform float u_container_angle;
+uniform float u_container_angular_velocity;
+uniform float u_container_angular_acceleration;
+uniform float u_reverse_impulse;
 uniform sampler2D  posTex;
 uniform isampler2D intPosTex;
 uniform sampler2D  velTex;
@@ -128,31 +135,40 @@ vec2 calcAcceleration() {
 
     vec2 boxSize = vec2(5.0, 1.5);
     float boxRadius = 0.8;
-    
-    // Apply animation (must match ms.frag)
-    float angle = sin(u_time * 1.2) * 0.15 * u_wave_amplitude;
-    float offsetX = sin(u_time * 0.8) * 1.0 * u_wave_amplitude;
-    
+
+    float angle = u_container_angle;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    vec2 p = pos_i;
-    p.y -= 3.0; // Offset up
-    p.x -= offsetX;
+    vec2 p = pos_i - u_container_position;
     p = rot * p;
+
+    vec2 r_world = pos_i - u_container_position;
+    vec2 omegaCrossR = vec2(-u_container_angular_velocity * r_world.y, u_container_angular_velocity * r_world.x);
+    vec2 alphaCrossR = vec2(-u_container_angular_acceleration * r_world.y, u_container_angular_acceleration * r_world.x);
+    vec2 omegaCrossOmegaCrossR = -u_container_angular_velocity * u_container_angular_velocity * r_world;
+    vec2 coriolis = 2.0 * vec2(-u_container_angular_velocity * vel_i.y, u_container_angular_velocity * vel_i.x);
+    vec2 a_container = u_container_acceleration + alphaCrossR + omegaCrossOmegaCrossR + coriolis;
+    vec2 a_effective = g - a_container;
 
     float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
     if (dist_iw < kernelRadius) {
         vec2  accWKer = texture(accWallKerTex, vec2(dist_iw * rcplKernelRadius, 0.5)).xy;
         vec2  posDir  = calcRoundedBoxNormal(p, boxSize, boxRadius);
-        // Transform normal back to world space
         posDir = vec2(cos(-angle) * posDir.x - sin(-angle) * posDir.y, sin(-angle) * posDir.x + cos(-angle) * posDir.y);
-        
-        float pres    = max((pr_i.x + rho0 * dot(g, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
+
+        float pres    = max((pr_i.x + rho0 * dot(a_effective, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
         float repul   = 10.0 * coefRepul * clamp(dp - dist_iw, 0.0, 0.5 * dp);
-        acc_i += (pres * accWKer.x - repul) * posDir + 0.2 * coefViscosity * vel_i * pr_i.y * rcplRho0 * accWKer.y;
+
+        float endMask = smoothstep(boxSize.x * 0.55, boxSize.x * 0.95, abs(p.x));
+        float impulseDecay = exp(-4.0 * max(dist_iw, 0.0) * rcplKernelRadius);
+        float impulse = u_reverse_impulse * endMask * impulseDecay;
+
+        acc_i += (pres * accWKer.x - repul) * posDir;
+        acc_i += impulse * posDir;
+        acc_i += 0.2 * coefViscosity * vel_i * pr_i.y * rcplRho0 * accWKer.y;
     }
 
     acc_i *= coefAcceleration;
-    acc_i += g;
+    acc_i += a_effective;
 
     return acc_i;
 }

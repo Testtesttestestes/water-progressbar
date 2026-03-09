@@ -30,6 +30,13 @@ uniform usampler2D cellBeginEndTex;
 uniform sampler2D  densWallKerTex;
 uniform float u_time;
 uniform float u_wave_amplitude;
+uniform vec2 u_container_position;
+uniform vec2 u_container_velocity;
+uniform vec2 u_container_acceleration;
+uniform float u_container_angle;
+uniform float u_container_angular_velocity;
+uniform float u_container_angular_acceleration;
+uniform float u_reverse_impulse;
 
 out vec4 o;
 
@@ -71,14 +78,10 @@ void main(void) {
     vec2 boxSize = vec2(5.0, 1.5);
     float boxRadius = 0.8;
     
-    // Apply animation (must match ms.frag)
-    float angle = sin(u_time * 1.2) * 0.15 * u_wave_amplitude;
-    float offsetX = sin(u_time * 0.8) * 1.0 * u_wave_amplitude;
-    
+    // Use tracked container pose from CPU
+    float angle = u_container_angle;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    vec2 p = pos_i;
-    p.y -= 3.0; // Offset up
-    p.x -= offsetX;
+    vec2 p = pos_i - u_container_position;
     p = rot * p;
 
     float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
