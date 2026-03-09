@@ -30,9 +30,16 @@ jobs:
       - name: Build app
         run: npm run build
 
+      - name: Prepare release artifact
+        run: |
+          rm -rf release
+          mkdir -p release
+          cp -R dist release/dist
+          cp serve_dist.py release/serve_dist.py
+
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
         with:
           name: static-page
-          path: dist
+          path: release
           if-no-files-found: error

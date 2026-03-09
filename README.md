@@ -22,7 +22,7 @@ View your app in AI Studio: https://ai.studio/apps/b5900ef9-5bf6-4f38-b1c9-60272
 
 1. Build production files:
    `npm run build`
-2. Start a local static server from `dist` (Python):
+2. Start a local static server from `dist` (Python script):
    `npm run serve:dist`
 3. Open in browser:
    [http://localhost:4173](http://localhost:4173)
@@ -35,4 +35,4 @@ It runs on push / pull request / manual dispatch and does:
 - `npm ci`
 - `npm run lint`
 - `npm run build`
-- uploads the built `dist` folder as artifact `static-page`.
+- packages `dist` together with `serve_dist.py` and uploads them as artifact `static-page`.
