@@ -8,9 +8,21 @@ interface RealisticProgressBarProps {
   progress: number; // от 0.0 до 1.0
   isWaving?: boolean;
   className?: string;
+  meshQuality?: 'high' | 'balanced' | 'low';
 }
 
-export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ progress, isWaving = false, className }) => {
+const MESH_QUALITY_FACTORS: Record<NonNullable<RealisticProgressBarProps['meshQuality']>, number> = {
+  high: 4,
+  balanced: 2,
+  low: 1,
+};
+
+export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
+  progress,
+  isWaving = false,
+  className,
+  meshQuality = 'balanced',
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef(progress);
   const isWavingRef = useRef(isWaving);
@@ -107,7 +119,9 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
         
         Renderer.setBackgroundTexture(bgTex);
         SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
-        Renderer.init(gl, canvas, dp/2, new Vec2(-R0), new Vec2(R0));
+        Renderer.init(gl, canvas, dp, new Vec2(-R0), new Vec2(R0), {
+          meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
+        });
         Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
 
         const loop = (currentTime: number) => {
