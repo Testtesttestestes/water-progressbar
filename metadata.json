@@ -1,0 +1,5 @@
+{
+  "name": "Realistic WebGL Progress Bar",
+  "description": "A realistic water progress bar using WebGL and SDF shaders.",
+  "requestFramePermissions": []
+}
