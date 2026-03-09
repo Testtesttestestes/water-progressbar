@@ -155,8 +155,8 @@ void main() {
 
             // --- ГЛАВНЫЙ ШТРИХ: Линия поверхности ---
             // Рисуем яркую кромку там, где dWater близко к 0
-            float surfaceThickness = 0.02;
-            float surfaceLine = smoothstep(surfaceThickness, 0.0, abs(dWater));
+            float w = max(fwidth(dWater), 0.001);
+            float surfaceLine = 1.0 - smoothstep(0.0, w * 2.0, abs(dWater));
 
             // Делаем блик ярче у краев стекла (мениск)
             float meniscus = smoothstep(0.1, 0.0, abs(dGlass + 0.05));
@@ -179,7 +179,8 @@ void main() {
     }
 
     // Сглаживание краев колбы (AA)
-    float aa = smoothstep(0.0, 0.03, dGlass);
+    float glassAAWidth = max(fwidth(dGlass), 0.001);
+    float aa = smoothstep(0.0, glassAAWidth, dGlass);
     vec3 finalBg = getBackground(screenUV);
     
     // Внешняя тень (из вёрстки: outer-shadow-blur 24px)
