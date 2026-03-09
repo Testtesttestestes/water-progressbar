@@ -39,6 +39,7 @@ layout(std140) uniform Update {
 uniform vec2  g;
 uniform vec4  pointerPosVel;
 uniform float pointerRadius;
+uniform sampler2D stateTex;
 uniform float u_progress;
 uniform float particleCount;
 uniform float u_time;
@@ -62,6 +63,7 @@ uniform sampler2D  accWallKerTex;
 layout(location = 0) out vec4 oPos;
 layout(location = 1) out vec2 oVel;
 layout(location = 2) out ivec2 oIntPos;
+layout(location = 3) out vec2 oState;
 
 vec2 idx2uv(in float idx, in vec4 texelSizeOffset) {
     float y;
@@ -115,6 +117,8 @@ vec2 calcAcceleration() {
             float r_sq   = dot(pos_ij, pos_ij);
             if (r_sq > kernelRadiusSq) continue;
 
+            vec2 state_j = texture(stateTex, uv_j).xy;
+            float neighMass = state_j.x * state_j.y;
             vec4 vpr_j = texture(velTex, uv_j);
 
             float rr  = inversesqrt(r_sq + 1e-8);
@@ -123,10 +127,10 @@ vec2 calcAcceleration() {
             // 表面張力
             float st = kernelRadiusSq - r_sq;
             st = st * st * st * coefSurfTension * step(0.8 * dp, r);
-            acc_i -= st * pos_ij;
+            acc_i -= neighMass * st * pos_ij;
 
             vec2 vel_ij = vel_i - vpr_j.xy;
-            vec2 prr_ij = vec2(pr_i.x + vpr_j.z, pr_i.y * vpr_j.w);
+            vec2 prr_ij = vec2(pr_i.x + vpr_j.z, pr_i.y * vpr_j.w * neighMass);
 
             float ker = 1.0 - r * rcplKernelRadius;
             ker = ker * ker * ker;
@@ -139,7 +143,7 @@ vec2 calcAcceleration() {
             float pres_ij  = -prr_ij.x * prr_ij.y;
             if (prr_ij.x < 0.0)
                 pres_ij *= 0.55;
-            float repul_ij = coefRepul * rr * max(0.98 * dp - r, 0.0);
+            float repul_ij = neighMass * coefRepul * rr * max(0.98 * dp - r, 0.0);
             acc_i += (pres_ij * ker + repul_ij) * pos_ij;
         }
     }
@@ -197,28 +201,20 @@ vec2 calcAcceleration() {
 }
 
 void main(void) {
-    float particleIndex = floor(gl_FragCoord.y) * round(1.0 / particleTexelSizeOffset.x) + floor(gl_FragCoord.x);
-    float activeCount = u_progress * particleCount;
-    
-    if (particleIndex >= activeCount) {
-        // Hide particle
-        oPos = vec4(1000.0, 1000.0, 0.0, 0.0);
-        oVel = vec2(0.0);
-        oIntPos = ivec2(round(vec2(1000.0, 1000.0) * toIntPos));
-        return;
-    }
-
-    vec2 acc  = calcAcceleration();
-    vec4 pvh  = texture(posTex, gl_FragCoord.xy * particleTexelSizeOffset.xy);
+    vec2 uv = gl_FragCoord.xy * particleTexelSizeOffset.xy;
+    vec4 pvh  = texture(posTex, uv);
     vec2 pos  = pvh.xy;
     vec2 velh = pvh.zw;
+    vec2 state = texture(stateTex, uv).xy;
 
-    if (pos.x > 500.0) {
-        // Just became active! Teleport to top of capsule
-        float randX = fract(sin(particleIndex * 12.9898) * 43758.5453) * 10.0 - 5.0;
-        pos = vec2(randX, 3.0);
-        velh = vec2(0.0, -2.0);
-    }
+    float particleIndex = floor(gl_FragCoord.y) * round(1.0 / particleTexelSizeOffset.x) + floor(gl_FragCoord.x);
+    float activeCount = u_progress * particleCount;
+    float targetActive = step(particleIndex, activeCount - 1.0);
+    float activationRate = 3.0;
+    float massBlend = clamp(state.y + (targetActive - state.y) * dt * activationRate, 0.0, 1.0);
+    float active = step(1e-3, massBlend);
+
+    vec2 acc  = calcAcceleration();
 
     float dist_im_sq = dot(pos - pointerPosVel.xy, pos - pointerPosVel.xy);
     if (dist_im_sq < pointerRadius * pointerRadius) {
@@ -230,7 +226,7 @@ void main(void) {
 
     // leap-frog
     vec2 vel;
-    velh += dt * acc;
+    velh += dt * acc * active;
 
     vec2 boxSize = vec2(5.0, 1.5);
     float boxRadius = 0.8;
@@ -263,14 +259,19 @@ void main(void) {
         velh = wallVel + relVN * wallNormal + relVT;
     }
 
-    vel   = velh + 0.5 * dt * acc;
+    vel   = velh + 0.5 * dt * acc * active;
     if (dot(velh, velh) > velLimit * velLimit)
         velh = velLimit * normalize(velh);
     if (dot(vel, vel) > velLimit * velLimit)
         vel  = velLimit * normalize(vel);
-    pos += dt * velh;
+    pos += dt * velh * active;
+
+    float damping = mix(0.97, 1.0, active);
+    velh *= damping;
+    vel *= damping;
 
     oPos    = vec4(pos, velh);
     oVel    = vel;
     oIntPos = ivec2(round(pos * toIntPos));
+    oState  = vec2(active, massBlend);
 }

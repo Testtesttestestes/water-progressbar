@@ -198,7 +198,7 @@ export const visualize = (callback) => {
 };
 
 export const injectWater = (volumeRatio) => {
-    _progress = volumeRatio;
+    _progress = Math.max(0, Math.min(1, volumeRatio));
 };
 
 export const setAnimationParams = (time, waveAmplitude) => {
@@ -346,8 +346,8 @@ const _createFBO = (reso, namesFormats, depth = false) => {
 };
 
 const _createMainFBOs = () => {
-    _posVelReadFBO       = _createFBO(_particleTextureResolution, [['posVelh', 'RGBA32F'], ['vel', 'RG16F'], ['intPos', 'RG16I']]);
-    _posVelWriteFBO      = _createFBO(_particleTextureResolution, [['posVelh', 'RGBA32F'], ['vel', 'RG16F'], ['intPos', 'RG16I']]);
+    _posVelReadFBO       = _createFBO(_particleTextureResolution, [['posVelh', 'RGBA32F'], ['vel', 'RG16F'], ['intPos', 'RG16I'], ['state', 'RG16F']]);
+    _posVelWriteFBO      = _createFBO(_particleTextureResolution, [['posVelh', 'RGBA32F'], ['vel', 'RG16F'], ['intPos', 'RG16I'], ['state', 'RG16F']]);
     _calcPressureFBO     = _createFBO(_particleTextureResolution, [['tex', 'RGBA16F']]);
     _writeIndexFBO       = _createFBO(_subcellTextureResolution,  [['tex',  'R32F']], true);
     _aggregateSubcellFBO = _createFBO(_cellTextureResolution,     [['cell', 'R8'  ], ['subcell', 'R32I']]);
@@ -422,6 +422,7 @@ const _calcPressure = () => {
     GLU.bindTextureUniform(_gl, 1, _calcPressureProgram.uniform('velTex'),          _posVelReadFBO.texture('vel'));
     GLU.bindTextureUniform(_gl, 2, _calcPressureProgram.uniform('cellBeginEndTex'), _cellBeginEndFBO.texture('cellBeginEnd'));
     GLU.bindTextureUniform(_gl, 3, _calcPressureProgram.uniform('densWallKerTex'),  _wallKernelTex.density);
+    GLU.bindTextureUniform(_gl, 4, _calcPressureProgram.uniform('stateTex'),        _posVelReadFBO.texture('state'));
     _gl.drawArrays(_gl.TRIANGLE_STRIP, 0, 4);
 };
 
@@ -451,6 +452,7 @@ const _updateParticles = () => {
     GLU.bindTextureUniform(_gl, 2, _updateParticlesProgram.uniform('velTex'),          _calcPressureFBO.texture('tex'));
     GLU.bindTextureUniform(_gl, 3, _updateParticlesProgram.uniform('cellBeginEndTex'), _cellBeginEndFBO.texture('cellBeginEnd'));
     GLU.bindTextureUniform(_gl, 4, _updateParticlesProgram.uniform('accWallKerTex'),   _wallKernelTex.acceleration);
+    GLU.bindTextureUniform(_gl, 5, _updateParticlesProgram.uniform('stateTex'),        _posVelReadFBO.texture('state'));
     _gl.drawArrays(_gl.TRIANGLE_STRIP, 0, 4);
 
     [_posVelReadFBO, _posVelWriteFBO] = [_posVelWriteFBO, _posVelReadFBO];
@@ -496,6 +498,7 @@ const _sortParticles = () => {
     GLU.bindTextureUniform(_gl, 3, _sortParticlesProgram.uniform('intPosTex'),  _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 4, _sortParticlesProgram.uniform('posTex'),     _posVelReadFBO.texture('posVelh'));
     GLU.bindTextureUniform(_gl, 5, _sortParticlesProgram.uniform('velTex'),     _posVelReadFBO.texture('vel'));
+    GLU.bindTextureUniform(_gl, 6, _sortParticlesProgram.uniform('stateTex'),   _posVelReadFBO.texture('state'));
     _gl.drawArrays(_gl.POINTS, 0, _particleCount);
 
     [_posVelReadFBO, _posVelWriteFBO] = [_posVelWriteFBO, _posVelReadFBO];
