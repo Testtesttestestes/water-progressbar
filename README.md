@@ -10,11 +10,29 @@ View your app in AI Studio: https://ai.studio/apps/b5900ef9-5bf6-4f38-b1c9-60272
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js
 
 1. Install dependencies:
    `npm install`
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Build to a browser-openable static page
+
+1. Build production files:
+   `npm run build`
+2. Start a local static server from `dist` (Python):
+   `npm run serve:dist`
+3. Open in browser:
+   [http://localhost:4173](http://localhost:4173)
+
+## GitHub Actions workflow
+
+Added workflow: `.github/workflows/build-static-page.yml`
+
+It runs on push / pull request / manual dispatch and does:
+- `npm ci`
+- `npm run lint`
+- `npm run build`
+- uploads the built `dist` folder as artifact `static-page`.
