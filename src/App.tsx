@@ -12,17 +12,19 @@ export default function App() {
   const [tiltAngle, setTiltAngle] = useState(0);
   const [flaskWidth, setFlaskWidth] = useState(10);
   const [flaskHeight, setFlaskHeight] = useState(3);
-  const pixelsPerUnit = 64;
-  const flaskContainerWidth = flaskWidth * pixelsPerUnit;
-  const flaskContainerHeight = flaskHeight * pixelsPerUnit;
 
   return (
-  <div className="relative h-screen w-full overflow-hidden bg-gray-900">
+  <div className="relative h-screen w-full overflow-hidden bg-gradient-to-br from-indigo-950 via-purple-900 to-black">
+    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-30 select-none">
+      <h1 className="text-[12vw] font-black text-white mix-blend-overlay leading-none tracking-tighter">WATER</h1>
+      <h1 className="text-[12vw] font-black text-white mix-blend-overlay leading-none tracking-tighter">SHADER</h1>
+    </div>
+
     <div
-      className="absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2"
+      className="absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2 transition-all duration-300"
       style={{
-        width: `${flaskContainerWidth}px`,
-        height: `${flaskContainerHeight}px`,
+        width: `${(flaskWidth + 6) * 35}px`,
+        height: `${(flaskHeight + 6) * 35}px`,
       }}
     >
       <RealisticProgressBar
