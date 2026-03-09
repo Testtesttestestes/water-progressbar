@@ -20,7 +20,9 @@ export type WaterProgressBarOptions = {
   borderRadius?: string;
 };
 
-const DEFAULT_OPTIONS: Required<Omit<WaterProgressBarOptions, 'top' | 'right' | 'bottom' | 'left' | 'wrapperClassName' | 'canvasClassName'>> = {
+const DEFAULT_OPTIONS: Required<
+  Omit<WaterProgressBarOptions, 'top' | 'right' | 'bottom' | 'left' | 'wrapperClassName' | 'canvasClassName'>
+> = {
   progress: 0.5,
   isWaving: false,
   tiltAngle: 0,
@@ -32,8 +34,17 @@ const DEFAULT_OPTIONS: Required<Omit<WaterProgressBarOptions, 'top' | 'right' | 
   borderRadius: '999px',
 };
 
+const clampProgress = (value: number) => {
+  if (Number.isNaN(value)) return DEFAULT_OPTIONS.progress;
+  if (value > 1) {
+    return Math.max(0, Math.min(1, value / 100));
+  }
+  return Math.max(0, Math.min(1, value));
+};
+
 export type WaterProgressBarInstance = {
   update: (nextOptions: Partial<WaterProgressBarOptions>) => void;
+  setProgress: (progress: number) => void;
   destroy: () => void;
   getOptions: () => WaterProgressBarOptions;
   element: HTMLDivElement;
@@ -54,7 +65,7 @@ const renderBar = (root: Root, wrapper: HTMLDivElement, options: WaterProgressBa
 
   root.render(
     <RealisticProgressBar
-      progress={options.progress ?? DEFAULT_OPTIONS.progress}
+      progress={clampProgress(options.progress ?? DEFAULT_OPTIONS.progress)}
       isWaving={options.isWaving ?? DEFAULT_OPTIONS.isWaving}
       tiltAngle={options.tiltAngle ?? DEFAULT_OPTIONS.tiltAngle}
       meshQuality={options.meshQuality ?? DEFAULT_OPTIONS.meshQuality}
@@ -78,6 +89,10 @@ export const createWaterProgressBar = (
   return {
     update: (nextOptions) => {
       options = { ...options, ...nextOptions };
+      renderBar(root, wrapper, options);
+    },
+    setProgress: (progress) => {
+      options = { ...options, progress: clampProgress(progress) };
       renderBar(root, wrapper, options);
     },
     destroy: () => {
