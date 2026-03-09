@@ -8,6 +8,7 @@ uniform float u_time;
 uniform float u_wave_amplitude;
 uniform vec2 u_container_pos;
 uniform float u_container_angle;
+uniform vec2 u_container_size;
 uniform vec2 u_sim_min;
 uniform vec2 u_sim_size;
 
@@ -58,7 +59,7 @@ void main() {
     }
 
     // Параметры формы (делаем чуть шире и "коробочнее" как в вёрстке)
-    vec2 boxSize = vec2(5.0, 1.5);
+    vec2 boxSize = 0.5 * u_container_size;
     float boxRadius = 0.8;
     
     float angle = u_container_angle;
