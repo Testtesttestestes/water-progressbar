@@ -71,11 +71,6 @@ const createParticlesCircular = () => {
         let r = Renderer.loadShaderFilesAsync();
         await Promise.all([s, r]);
         SPH.init(gl, dp, fluidDomainR, createParticlesCircular());
-
-        const modeParam = new URLSearchParams(location.search).get('mode');
-        if (modeParam === 'arcade' || modeParam === 'physical')
-            SPH.setParameterMode(modeParam);
-
         Renderer.init(gl, canvas, dp/2, new Vec2(-R0), new Vec2(R0));
 
     } catch (e) {

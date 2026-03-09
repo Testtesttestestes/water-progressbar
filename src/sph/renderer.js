@@ -56,7 +56,7 @@ let _bgTex;
 let _resolution;
 let _cellSize;
 let _cellOrigin; 
-let _meshSizeQualityFactor = 1.0;
+let _meshSizeQualityFactor = 5.0;
 
 let _renderingArea = { min: Vec2.zero(), max: new Vec2(1) };
 
@@ -115,7 +115,7 @@ export const setBackgroundTexture = (tex) => {
     _bgTex = tex;
 };
 
-export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, cellBeginEndTex, stateTex) => {
+export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, cellBeginEndTex) => {
     if (_smoothPosFBO.width() !== particleTexReso.x || _smoothPosFBO.height() !== particleTexReso.y) {
         _smoothPosFBO.resize(particleTexReso.x, particleTexReso.y);
     }
@@ -127,7 +127,6 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
     _gl.uniform1f(_smoothPosProgram.uniform('smoothRadius'), smoothRadius);
     GLU.bindTextureUniform(_gl, 0, _smoothPosProgram.uniform('intPosTex'), intPosTex);
     GLU.bindTextureUniform(_gl, 1, _smoothPosProgram.uniform('cellBeginEndTex'), cellBeginEndTex);
-    GLU.bindTextureUniform(_gl, 2, _smoothPosProgram.uniform('stateTex'), stateTex);
     _gl.drawArrays(_gl.POINTS, 0, particleCount);
 
     _weightedCenterProgram.use();
@@ -135,7 +134,6 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
     _gl.uniform1f(_weightedCenterProgram.uniform('smoothRadius'), smoothRadius);
     GLU.bindTextureUniform(_gl, 0, _weightedCenterProgram.uniform('intPosTex'), _smoothPosFBO.texture('tex'));
     GLU.bindTextureUniform(_gl, 1, _weightedCenterProgram.uniform('cellBeginEndTex'), cellBeginEndTex);
-    GLU.bindTextureUniform(_gl, 2, _weightedCenterProgram.uniform('stateTex'), stateTex);
     _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 
     _distanceFieldProgram.use();
@@ -160,7 +158,7 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
     _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 };
 
-export const renderParticles = (particleCount, dp, _1, intPosTex, velTex, _2, stateTex) => {
+export const renderParticles = (particleCount, dp, _1, intPosTex, velTex, _2) => {
     _gl.bindFramebuffer(_gl.FRAMEBUFFER, null);
     _gl.viewport(0, 0, _canvas.width, _canvas.height);
     _gl.clearColor(0.2, 0.2, 0.2, 1);
@@ -171,7 +169,6 @@ export const renderParticles = (particleCount, dp, _1, intPosTex, velTex, _2, st
     _gl.uniform1f(_pointSpriteProgram.uniform('particleRadius'), dp/2);
     GLU.bindTextureUniform(_gl, 0, _pointSpriteProgram.uniform('intPosTex'), intPosTex);
     GLU.bindTextureUniform(_gl, 1, _pointSpriteProgram.uniform('velTex'), velTex);
-    GLU.bindTextureUniform(_gl, 2, _pointSpriteProgram.uniform('stateTex'), stateTex);
     _gl.drawArraysInstanced(_gl.TRIANGLE_STRIP, 0, 4, particleCount);
 };
 

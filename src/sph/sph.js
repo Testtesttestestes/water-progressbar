@@ -27,24 +27,8 @@ let _gl;
 
 const _gravity       = new Vec2(0, -10);
 const _rho0          = 1000; //1000だと圧力が半精度では表現できなくなるので適当な値にする
-const _parameterModes = {
-    arcade: {
-        speedSoundFactor: 2.8,
-        pressBScale: 0.85,
-        viscosityScale: 1.4,
-        surfaceTensionScale: 1.5,
-        repulsionScale: 1.15,
-    },
-    physical: {
-        speedSoundFactor: 3.8,
-        pressBScale: 1.2,
-        viscosityScale: 2.1,
-        surfaceTensionScale: 2.2,
-        repulsionScale: 1.35,
-    }
-};
-const _baseViscosity = 0.1 * _rho0;
-const _baseSurfTension = 2;
+const _viscosity     = 0.1 * _rho0;
+const _surfTension   = 2;
 
 const _vertSources = [
     initparticlesVert,
@@ -91,8 +75,6 @@ let _kernelRadius;
 let _dp;
 let _dt;
 let _updateStaticParams;
-let _densityParams;
-let _activeParamMode = 'arcade';
 
 let _particleCount;
 
@@ -193,13 +175,12 @@ export const visualize = (callback) => {
             _particleTextureResolution, 
             _posVelReadFBO.texture('intPos'), 
             _posVelReadFBO.texture('vel'), 
-            _cellBeginEndFBO.texture('cellBeginEnd'),
-            _posVelReadFBO.texture('state')
+            _cellBeginEndFBO.texture('cellBeginEnd')
     );
 };
 
 export const injectWater = (volumeRatio) => {
-    _progress = Math.max(0, Math.min(1, volumeRatio));
+    _progress = volumeRatio;
 };
 
 export const setAnimationParams = (time, waveAmplitude) => {
@@ -214,32 +195,15 @@ export const setContainerKinematics = (kinematics) => {
     };
 };
 
-
-export const setParameterMode = (mode) => {
-    if (!(mode in _parameterModes)) {
-        console.warn(`Unknown SPH mode '${mode}'. Available modes: ${Object.keys(_parameterModes).join(', ')}`);
-        return;
-    }
-    if (_activeParamMode === mode)
-        return;
-
-    _activeParamMode = mode;
-    if (!_gl)
-        return;
-
-    _initParams();
-};
-
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 const _bindUpdateUBO = () => {
-    const mode = _parameterModes[_activeParamMode];
     GLU.bindUBO(_gl, uniformBlockBindingTable.Update, [
         _updateStaticParams.effectiveParticleMaxUV.x, _updateStaticParams.effectiveParticleMaxUV.y,
         _dp,
         _rho0, 1 / _rho0,
         _kernelRadius, _kernelRadius**2, 1 / _kernelRadius,
-        _baseViscosity * mode.viscosityScale,
+        _viscosity,
         _updateStaticParams.surfaceTensionCoef,
         _updateStaticParams.accelerationCoef,
         _updateStaticParams.repulsionCoef,
@@ -263,10 +227,9 @@ const _initParams = () => {
     let h          = 1.02 * _dp;
     _kernelRadius  = 2*h;
     let velLimit   = Math.sqrt(2 * Vec2.length(_gravity) * _fluidDomainRadius);
-    let mode = _parameterModes[_activeParamMode];
-    let speedSound = mode.speedSoundFactor * velLimit;
+    let speedSound = 3 * velLimit;
     _dt            = 0.45 * h / velLimit;
-    let pressB     = (_rho0 * speedSound * speedSound / 2) * mode.pressBScale;
+    let pressB     = _rho0 * speedSound * speedSound / 2;
     let poly6KernelAlpha = (() => {
         let sum = 0;
         for (let r of _helper.sampleParticles5x5(_dp))
@@ -301,24 +264,19 @@ const _initParams = () => {
     GLU.bindUBO(_gl, uniformBlockBindingTable.Cell,            [_cellResolution.x, _cellResolution.y, cellOrigin.x, cellOrigin.y, 1/cellSize]);
     GLU.bindUBO(_gl, uniformBlockBindingTable.Subcell,         [_subcellResolution.x, _subcellResolution.y, subcellOrigin.x, subcellOrigin.y, 1/subcellSize.x, 1/subcellSize.y]);
     GLU.bindUBO(_gl, uniformBlockBindingTable.SPHVertexShader, [0.5 * particleTexelSize.x, 0.5 * particleTexelSize.y, 1, effectiveParticleMaxUV.y + particleTexelSize.y]);
-    _densityParams = {
-        effectiveParticleMaxUV,
-        massDensityCoef: mass * poly6KernelAlpha,
-        pressB,
-    };
     GLU.bindUBO(_gl, uniformBlockBindingTable.Density, [
-        _densityParams.effectiveParticleMaxUV.x, _densityParams.effectiveParticleMaxUV.y,
-        _dp,
-        1/_rho0,
-        _kernelRadius, _kernelRadius**2, 1/_kernelRadius,
-        _densityParams.massDensityCoef,
-        _densityParams.pressB,
+        effectiveParticleMaxUV.x, effectiveParticleMaxUV.y, 
+        _dp, 
+        1/_rho0, 
+        _kernelRadius, _kernelRadius**2, 1/_kernelRadius, 
+        mass * poly6KernelAlpha, 
+        pressB, 
         _fluidDomainRadius]);
     _updateStaticParams = {
         effectiveParticleMaxUV,
-        surfaceTensionCoef: (_baseSurfTension * mode.surfaceTensionScale) * poly6KernelAlpha / (mass * gradWendlandKernelAlpha),
+        surfaceTensionCoef: _surfTension * poly6KernelAlpha / (mass * gradWendlandKernelAlpha),
         accelerationCoef: mass * gradWendlandKernelAlpha,
-        repulsionCoef: (0.01 * mode.repulsionScale) / (mass * gradWendlandKernelAlpha * _dt**2),
+        repulsionCoef: 0.01 / (mass * gradWendlandKernelAlpha * _dt**2),
         velLimit
     };
     _bindUpdateUBO();
@@ -347,8 +305,8 @@ const _createFBO = (reso, namesFormats, depth = false) => {
 };
 
 const _createMainFBOs = () => {
-    _posVelReadFBO       = _createFBO(_particleTextureResolution, [['posVelh', 'RGBA32F'], ['vel', 'RG16F'], ['intPos', 'RG16I'], ['state', 'RG16F']]);
-    _posVelWriteFBO      = _createFBO(_particleTextureResolution, [['posVelh', 'RGBA32F'], ['vel', 'RG16F'], ['intPos', 'RG16I'], ['state', 'RG16F']]);
+    _posVelReadFBO       = _createFBO(_particleTextureResolution, [['posVelh', 'RGBA32F'], ['vel', 'RG16F'], ['intPos', 'RG16I']]);
+    _posVelWriteFBO      = _createFBO(_particleTextureResolution, [['posVelh', 'RGBA32F'], ['vel', 'RG16F'], ['intPos', 'RG16I']]);
     _calcPressureFBO     = _createFBO(_particleTextureResolution, [['tex', 'RGBA16F']]);
     _writeIndexFBO       = _createFBO(_subcellTextureResolution,  [['tex',  'R32F']], true);
     _aggregateSubcellFBO = _createFBO(_cellTextureResolution,     [['cell', 'R8'  ], ['subcell', 'R32I']]);
@@ -359,8 +317,6 @@ const _createMainFBOs = () => {
 const _initPosVelTex = (particleVBOs) => {
     let prg = _createProgram(0, 0, [0, 1, 2], [2, 2, 2], ['ParticleTexture', 'ToIntPos']);
     prg.use();
-    _gl.uniform1f(prg.uniform('u_progress'), _progress);
-    _gl.uniform1f(prg.uniform('particleCount'), _particleCount);
     GLU.setAttributes(_gl, particleVBOs, prg.location, prg.stride);
 
     _posVelReadFBO.bind();
@@ -425,7 +381,6 @@ const _calcPressure = () => {
     GLU.bindTextureUniform(_gl, 1, _calcPressureProgram.uniform('velTex'),          _posVelReadFBO.texture('vel'));
     GLU.bindTextureUniform(_gl, 2, _calcPressureProgram.uniform('cellBeginEndTex'), _cellBeginEndFBO.texture('cellBeginEnd'));
     GLU.bindTextureUniform(_gl, 3, _calcPressureProgram.uniform('densWallKerTex'),  _wallKernelTex.density);
-    GLU.bindTextureUniform(_gl, 4, _calcPressureProgram.uniform('stateTex'),        _posVelReadFBO.texture('state'));
     _gl.drawArrays(_gl.TRIANGLE_STRIP, 0, 4);
 };
 
@@ -455,7 +410,6 @@ const _updateParticles = () => {
     GLU.bindTextureUniform(_gl, 2, _updateParticlesProgram.uniform('velTex'),          _calcPressureFBO.texture('tex'));
     GLU.bindTextureUniform(_gl, 3, _updateParticlesProgram.uniform('cellBeginEndTex'), _cellBeginEndFBO.texture('cellBeginEnd'));
     GLU.bindTextureUniform(_gl, 4, _updateParticlesProgram.uniform('accWallKerTex'),   _wallKernelTex.acceleration);
-    GLU.bindTextureUniform(_gl, 5, _updateParticlesProgram.uniform('stateTex'),        _posVelReadFBO.texture('state'));
     _gl.drawArrays(_gl.TRIANGLE_STRIP, 0, 4);
 
     [_posVelReadFBO, _posVelWriteFBO] = [_posVelWriteFBO, _posVelReadFBO];
@@ -495,14 +449,12 @@ const _sortParticles = () => {
     _sortParticlesProgram.use();
     _posVelWriteFBO.bind();
     _gl.uniform1f(_sortParticlesProgram.uniform('particleCount'), _particleCount);
-    _gl.uniform1f(_sortParticlesProgram.uniform('u_progress'), _progress);
     GLU.bindTextureUniform(_gl, 0, _sortParticlesProgram.uniform('scanTex'),    _cellBeginEndFBO.texture('scan'));
     GLU.bindTextureUniform(_gl, 1, _sortParticlesProgram.uniform('subcellTex'), _aggregateSubcellFBO.texture('subcell'));
     GLU.bindTextureUniform(_gl, 2, _sortParticlesProgram.uniform('indexTex'),   _writeIndexFBO.texture('tex'));
     GLU.bindTextureUniform(_gl, 3, _sortParticlesProgram.uniform('intPosTex'),  _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 4, _sortParticlesProgram.uniform('posTex'),     _posVelReadFBO.texture('posVelh'));
     GLU.bindTextureUniform(_gl, 5, _sortParticlesProgram.uniform('velTex'),     _posVelReadFBO.texture('vel'));
-    GLU.bindTextureUniform(_gl, 6, _sortParticlesProgram.uniform('stateTex'),   _posVelReadFBO.texture('state'));
     _gl.drawArrays(_gl.POINTS, 0, _particleCount);
 
     [_posVelReadFBO, _posVelWriteFBO] = [_posVelWriteFBO, _posVelReadFBO];

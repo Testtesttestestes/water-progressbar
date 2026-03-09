@@ -15,7 +15,6 @@ layout(std140) uniform Cell {
 uniform float smoothRadius;
 uniform isampler2D intPosTex;
 uniform usampler2D cellBeginEndTex;
-uniform sampler2D stateTex;
 
 out vec2 vPos;
 
@@ -34,12 +33,6 @@ void main(void) {
     vec2  uv  = idx2uv(idx, particleTexelSizeOffset);
     gl_Position  = vec4(uv * 2.0 - 1.0, 0, 1);
     gl_PointSize = 1.0;
-
-    vec2 state_i = texture(stateTex, uv).xy;
-    if (state_i.x < 0.5) {
-        vPos = vec2(1000.0); // Move inactive particles far away
-        return;
-    }
 
     vec2  pos_i  = vec2(texture(intPosTex, uv).xy) * toFloatPos;
     vec2  cell_i = floor((pos_i - cellOrigin) * rcplCellSize);
@@ -61,9 +54,6 @@ void main(void) {
 
         for (float j = begin; j < end; j++) {
             vec2 uv_j = idx2uv(j, particleTexelSizeOffset);
-            
-            vec2 state_j = texture(stateTex, uv_j).xy;
-            if (state_j.x < 0.5) continue;
 
             vec2  pos_j  = vec2(texture(intPosTex, uv_j).xy) * toFloatPos;
             vec2  pos_ij = pos_i - pos_j;

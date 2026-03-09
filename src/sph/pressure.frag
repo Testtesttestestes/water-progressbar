@@ -28,7 +28,6 @@ uniform isampler2D intPosTex;
 uniform sampler2D  velTex;
 uniform usampler2D cellBeginEndTex;
 uniform sampler2D  densWallKerTex;
-uniform sampler2D  stateTex;
 uniform float u_time;
 uniform float u_wave_amplitude;
 uniform vec2 u_container_pos;
@@ -72,11 +71,9 @@ void main(void) {
 
         for (float j = begEnd.x; j < begEnd.y; j++) {
             vec2  uv_j   = idx2uv(j, particleTexelSizeOffset);
-            vec2 state_j = texture(stateTex, uv_j).xy;
             vec2  pos_ij = pos_i - vec2(texture(intPosTex, uv_j).xy) * toFloatPos;
             float poly6  = kernelRadiusSq - dot(pos_ij, pos_ij);
-            float neighMass = state_j.x * state_j.y;
-            rho_i += neighMass * poly6 * poly6 * poly6 * step(0.0, poly6);
+            rho_i += poly6 * poly6 * poly6 * step(0.0, poly6);
         }
     }
 
@@ -90,23 +87,14 @@ void main(void) {
     vec2 p = pos_i - u_container_pos;
     p = rot * p;
 
-    vec2 state_i = texture(stateTex, uv_i).xy;
-    float selfMass = state_i.x * state_i.y;
-
     float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
     float u_w = dist_iw * rcplKernelRadius;
     if (u_w < 1.0)
         rho_i += texture(densWallKerTex, vec2(u_w, 0.5)).x;
 
     rho_i *= coefDensity;
-    rho_i = max(rho_i, 1e-5);
     float relrho_i = rho_i * rcplRho0;
-    float eosTerm = relrho_i * relrho_i - 1.0;
-    float negBand = 0.05;
-    float softBand = smoothstep(-negBand, 0.0, eosTerm);
-    float negClamp = clamp(eosTerm, -negBand, 0.0);
-    float blendedEos = mix(0.35 * negClamp, eosTerm, softBand);
-    float pres_i = pressB * blendedEos;
+    float pres_i = max(pressB * (relrho_i * relrho_i - 1.0), 0.0);
 
-    o = vec4(texture(velTex, uv_i).xy, pres_i * selfMass, selfMass / rho_i);
+    o = vec4(texture(velTex, uv_i).xy, pres_i, 1./rho_i);
 }
