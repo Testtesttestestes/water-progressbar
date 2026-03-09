@@ -24,7 +24,19 @@ export class ShaderProgram {
     uniform(name) {
         if (name in this.#uniforms)
             return this.#uniforms[name];
-        else // debug
-            console.error(`Uniform '${name}' does not exist.`);
+
+        const legacyAlias = {
+            u_container_velocity: 'u_container_vel',
+            u_container_acceleration: 'u_container_acc',
+            u_container_angular_velocity: 'u_container_ang_vel',
+            u_container_angular_acceleration: 'u_container_ang_acc',
+            u_reverse_impulse: 'u_reverse_impulse_strength',
+        };
+        const alias = legacyAlias[name];
+        if (alias && alias in this.#uniforms)
+            return this.#uniforms[alias];
+
+        // debug
+        console.error(`Uniform '${name}' does not exist.`);
     }
 }
