@@ -160,7 +160,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
         width: '100vw', 
         height: '100vh', 
         display: 'block', 
-        zIndex: 50,
+        zIndex: 0,
         pointerEvents: 'none'
       }} 
     />
