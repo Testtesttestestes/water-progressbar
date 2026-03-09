@@ -8,6 +8,8 @@ interface RealisticProgressBarProps {
   progress: number; // от 0.0 до 1.0
   isWaving?: boolean;
   tiltAngle?: number;
+  flaskWidth?: number;
+  flaskHeight?: number;
   className?: string;
   meshQuality?: 'high' | 'balanced' | 'low';
 }
@@ -48,6 +50,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   progress,
   isWaving = false,
   tiltAngle = 0,
+  flaskWidth = 10,
+  flaskHeight = 3,
   className,
   meshQuality = 'low',
 }) => {
@@ -113,7 +117,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
 
     const createParticlesRoundedBox = () => {
         let pos = [];
-        let boxSize = {x: 5.0, y: 1.5};
+        const boxSize = { x: flaskWidth / 2, y: flaskHeight / 2 };
         let boxRadius = 0.8;
         
         let minX = -7.5;
@@ -155,9 +159,11 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         
         Renderer.setBackgroundTexture(bgTex);
         SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
+        SPH.setContainerSize(new Vec2(flaskWidth, flaskHeight));
         Renderer.init(gl, canvas, dp, new Vec2(-R0), new Vec2(R0), {
           meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
         });
+        Renderer.setContainerSize(new Vec2(flaskWidth, flaskHeight));
         Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
 
         const loop = (currentTime: number) => {
@@ -256,7 +262,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, []);
+  }, [flaskHeight, flaskWidth, meshQuality]);
 
   return (
     <canvas 

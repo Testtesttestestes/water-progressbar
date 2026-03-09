@@ -10,12 +10,20 @@ export default function App() {
   const [progress, setProgress] = useState(0.5);
   const [isWaving, setIsWaving] = useState(false);
   const [tiltAngle, setTiltAngle] = useState(0);
+  const [flaskWidth, setFlaskWidth] = useState(10);
+  const [flaskHeight, setFlaskHeight] = useState(3);
 
   return (
   <div className="relative h-screen w-full overflow-hidden bg-gray-900">
     {/* 1. Слой с водой (Канвас) — занимает весь экран на заднем плане */}
     <div className="absolute inset-0 z-0">
-      <RealisticProgressBar progress={progress} isWaving={isWaving} tiltAngle={tiltAngle} />
+      <RealisticProgressBar
+        progress={progress}
+        isWaving={isWaving}
+        tiltAngle={tiltAngle}
+        flaskWidth={flaskWidth}
+        flaskHeight={flaskHeight}
+      />
     </div>
 
     {/* 2. Слой интерфейса — только маленькая плашка внизу */}
@@ -57,6 +65,38 @@ export default function App() {
               step={0.005}
               value={tiltAngle}
               onChange={(e) => setTiltAngle(parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
+              <span>Flask Width</span>
+              <span>{flaskWidth.toFixed(1)}</span>
+            </div>
+            <input
+              type="range"
+              min={6}
+              max={14}
+              step={0.1}
+              value={flaskWidth}
+              onChange={(e) => setFlaskWidth(parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
+              <span>Flask Height</span>
+              <span>{flaskHeight.toFixed(1)}</span>
+            </div>
+            <input
+              type="range"
+              min={2}
+              max={7}
+              step={0.1}
+              value={flaskHeight}
+              onChange={(e) => setFlaskHeight(parseFloat(e.target.value))}
               className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
             />
           </div>
