@@ -74,6 +74,7 @@ let _fluidDomainRadius;
 let _kernelRadius;
 let _dp;
 let _dt;
+let _updateStaticParams;
 
 let _particleCount;
 
@@ -102,6 +103,12 @@ let _containerKinematics = {
     reverseImpulseStrength: 0.0,
     reverseImpulseAge: 1e6,
     reverseDeltaV: Vec2.zero(),
+    wallRepulsionScale: 4.0,
+    wallNormalViscScale: 0.12,
+    wallTangentialViscScale: 0.45,
+    wallTangentialFriction: 8.0,
+    wallNormalRestitution: 0.15,
+    wallMaxNormalEnergy: 5.0,
 };
 
 const _helper = {
@@ -190,6 +197,28 @@ export const setContainerKinematics = (kinematics) => {
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+const _bindUpdateUBO = () => {
+    GLU.bindUBO(_gl, uniformBlockBindingTable.Update, [
+        _updateStaticParams.effectiveParticleMaxUV.x, _updateStaticParams.effectiveParticleMaxUV.y,
+        _dp,
+        _rho0, 1 / _rho0,
+        _kernelRadius, _kernelRadius**2, 1 / _kernelRadius,
+        _viscosity,
+        _updateStaticParams.surfaceTensionCoef,
+        _updateStaticParams.accelerationCoef,
+        _updateStaticParams.repulsionCoef,
+        _fluidDomainRadius,
+        _dt,
+        _updateStaticParams.velLimit,
+        _containerKinematics.wallRepulsionScale,
+        _containerKinematics.wallNormalViscScale,
+        _containerKinematics.wallTangentialViscScale,
+        _containerKinematics.wallTangentialFriction,
+        _containerKinematics.wallNormalRestitution,
+        _containerKinematics.wallMaxNormalEnergy
+    ]);
+};
+
 const _initParams = () => {
     let toIntPos   = (2**15 - 1) / Math.ceil(_fluidDomainRadius);
     let toFloatPos = 1 / toIntPos;
@@ -243,19 +272,14 @@ const _initParams = () => {
         mass * poly6KernelAlpha, 
         pressB, 
         _fluidDomainRadius]);
-    GLU.bindUBO(_gl, uniformBlockBindingTable.Update, [
-        effectiveParticleMaxUV.x, effectiveParticleMaxUV.y,
-        _dp,
-        _rho0, 1/_rho0,
-        _kernelRadius, _kernelRadius**2, 1/_kernelRadius,
-        _viscosity,
-        _surfTension * poly6KernelAlpha / (mass * gradWendlandKernelAlpha),
-        mass * gradWendlandKernelAlpha,
-        0.01 / (mass * gradWendlandKernelAlpha * _dt**2),
-        _fluidDomainRadius,
-        _dt,
+    _updateStaticParams = {
+        effectiveParticleMaxUV,
+        surfaceTensionCoef: _surfTension * poly6KernelAlpha / (mass * gradWendlandKernelAlpha),
+        accelerationCoef: mass * gradWendlandKernelAlpha,
+        repulsionCoef: 0.01 / (mass * gradWendlandKernelAlpha * _dt**2),
         velLimit
-    ]);
+    };
+    _bindUpdateUBO();
 };
 
 const _createProgram = (vsIdx, fsIdx, location = null, stride = null, uniformBlockNames = []) => {
@@ -361,6 +385,8 @@ const _calcPressure = () => {
 };
 
 const _updateParticles = () => {
+    _bindUpdateUBO();
+
     _updateParticlesProgram.use();
     _posVelWriteFBO.bind();
     _gl.uniform2f(_updateParticlesProgram.uniform('g'), _gravity.x, _gravity.y);

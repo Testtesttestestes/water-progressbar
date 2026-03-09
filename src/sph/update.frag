@@ -28,6 +28,12 @@ layout(std140) uniform Update {
     float domainRadius;
     float dt;
     float velLimit;
+    float wallRepulsionScale;
+    float wallNormalViscScale;
+    float wallTangentialViscScale;
+    float wallTangentialFriction;
+    float wallNormalRestitution;
+    float wallMaxNormalEnergy;
 };
 
 uniform vec2  g;
@@ -152,9 +158,18 @@ vec2 calcAcceleration() {
         // Transform normal back to world space
         posDir = vec2(cos(-angle) * posDir.x - sin(-angle) * posDir.y, sin(-angle) * posDir.x + cos(-angle) * posDir.y);
         
-        float pres    = max((pr_i.x + rho0 * dot(g, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
-        float repul   = 10.0 * coefRepul * clamp(dp - dist_iw, 0.0, 0.5 * dp);
-        acc_i += (pres * accWKer.x - repul) * posDir + 0.2 * coefViscosity * vel_i * pr_i.y * rcplRho0 * accWKer.y;
+        float pres  = max((pr_i.x + rho0 * dot(g, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
+        float repul = wallRepulsionScale * coefRepul * clamp(dp - dist_iw, 0.0, 0.5 * dp);
+
+        vec2 r_local = pos_i - u_container_pos;
+        vec2 wallVel = u_container_vel + vec2(-r_local.y, r_local.x) * u_container_ang_vel;
+        vec2 relVel  = vel_i - wallVel;
+        float relN   = dot(relVel, posDir);
+        vec2 relT    = relVel - relN * posDir;
+
+        vec2 viscWall = (-wallNormalViscScale * relN * posDir - wallTangentialViscScale * relT)
+                      * coefViscosity * pr_i.y * rcplRho0 * accWKer.y;
+        acc_i += (pres * accWKer.x - repul) * posDir + viscWall;
     }
 
     vec2 r_world = pos_i - u_container_pos;
@@ -213,6 +228,38 @@ void main(void) {
     // leap-frog
     vec2 vel;
     velh += dt * acc;
+
+    vec2 boxSize = vec2(5.0, 1.5);
+    float boxRadius = 0.8;
+    float angle = u_container_angle;
+    mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+    vec2 pLocal = rot * (pos - u_container_pos);
+    float dist_iw = -sdRoundedBox(pLocal, boxSize, boxRadius) + 0.5 * dp;
+    vec2 normalLocal = calcRoundedBoxNormal(pLocal, boxSize, boxRadius);
+    vec2 wallNormal = vec2(
+        cos(-angle) * normalLocal.x - sin(-angle) * normalLocal.y,
+        sin(-angle) * normalLocal.x + cos(-angle) * normalLocal.y
+    );
+
+    if (dist_iw < dp) {
+        vec2 r_local = pos - u_container_pos;
+        vec2 wallVel = u_container_vel + vec2(-r_local.y, r_local.x) * u_container_ang_vel;
+        vec2 relVel = velh - wallVel;
+        float relVN = dot(relVel, wallNormal);
+        vec2 relVT = relVel - relVN * wallNormal;
+
+        if (relVN > 0.0) {
+            relVN = -wallNormalRestitution * relVN;
+            float normalEnergy = 0.5 * relVN * relVN;
+            float softClamp = sqrt(wallMaxNormalEnergy / (wallMaxNormalEnergy + normalEnergy + 1e-6));
+            relVN *= softClamp;
+        }
+
+        float tangentialDamping = clamp(1.0 - wallTangentialFriction * dt, 0.0, 1.0);
+        relVT *= tangentialDamping;
+        velh = wallVel + relVN * wallNormal + relVT;
+    }
+
     vel   = velh + 0.5 * dt * acc;
     if (dot(velh, velh) > velLimit * velLimit)
         velh = velLimit * normalize(velh);
