@@ -249,15 +249,23 @@ void main(void) {
         vec2 relVT = relVel - relVN * wallNormal;
 
         if (relVN > 0.0) {
+            // Suppress per-particle ballistic bounces so the splash stays coherent.
             relVN = -wallNormalRestitution * relVN;
             float normalEnergy = 0.5 * relVN * relVN;
             float softClamp = sqrt(wallMaxNormalEnergy / (wallMaxNormalEnergy + normalEnergy + 1e-6));
             relVN *= softClamp;
         }
 
-        float tangentialDamping = clamp(1.0 - wallTangentialFriction * dt, 0.0, 1.0);
+        float nearWallBlend = 1.0 - clamp(dist_iw / dp, 0.0, 1.0);
+        float tangentialDamping = clamp(1.0 - wallTangentialFriction * dt * (0.7 + 0.3 * nearWallBlend), 0.0, 1.0);
         relVT *= tangentialDamping;
-        velh = wallVel + relVN * wallNormal + relVT;
+
+        // Shared tangential drift from flask motion makes the whole contact layer move together.
+        vec2 wallTangent = vec2(-wallNormal.y, wallNormal.x);
+        float wallSlip = dot(wallVel, wallTangent);
+        float cohesiveSlip = wallSlip * nearWallBlend;
+
+        velh = wallVel + relVN * wallNormal + relVT + cohesiveSlip * wallTangent;
     }
 
     vel   = velh + 0.5 * dt * acc;
