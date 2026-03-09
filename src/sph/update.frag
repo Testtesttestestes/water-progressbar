@@ -135,7 +135,7 @@ vec2 calcAcceleration() {
     
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     vec2 p = pos_i;
-    p.y -= 2.0; // Offset up
+    p.y -= 3.0; // Offset up
     p.x -= offsetX;
     p = rot * p;
 

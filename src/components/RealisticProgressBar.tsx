@@ -46,8 +46,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
         SPH.setPointerPos(new Vec2(0, 0));
     };
 
-    canvas.addEventListener('mousemove', handleMouseMove);
-    canvas.addEventListener('mouseleave', handleMouseLeave);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseleave', handleMouseLeave);
 
     let gl = canvas.getContext('webgl2');
     if (!gl) {
@@ -83,7 +83,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
 
         for (let x = minX; x <= maxX; x += dp * 1.05) {
             for (let y = minY; y <= maxY; y += dp * 1.05) {
-                let dist = sdRoundedBox(x, y - 2.0, boxSize.x, boxSize.y, boxRadius);
+                let dist = sdRoundedBox(x, y - 3.0, boxSize.x, boxSize.y, boxRadius);
                 
                 // Fill the volume
                 if (dist < -dp * 0.5) {
@@ -144,8 +144,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
         if (animationFrameId) {
             cancelAnimationFrame(animationFrameId);
         }
-        canvas.removeEventListener('mousemove', handleMouseMove);
-        canvas.removeEventListener('mouseleave', handleMouseLeave);
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseleave', handleMouseLeave);
     };
   }, []);
 
@@ -160,8 +160,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
         width: '100vw', 
         height: '100vh', 
         display: 'block', 
-        zIndex: -1,
-        pointerEvents: 'auto'
+        zIndex: 50,
+        pointerEvents: 'none'
       }} 
     />
   );

@@ -65,7 +65,7 @@ void main() {
     
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     vec2 p = simPos;
-    p.y -= 2.0; // Offset up
+    p.y -= 3.0; // Offset up
     p.x -= offsetX;
     p = rot * p;
 

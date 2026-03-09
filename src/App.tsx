@@ -20,7 +20,7 @@ export default function App() {
           <p className="text-white/60">WebGL SPH Simulation</p>
         </div>
 
-        <div className="h-32" /> {/* Spacer for the capsule area */}
+        <div className="h-48" /> {/* Spacer for the capsule area */}
 
         <div className="space-y-4 max-w-md mx-auto">
           <div className="flex justify-between text-sm font-medium text-white/50">
