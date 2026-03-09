@@ -27,16 +27,10 @@ vec2 getWaterNormal(vec2 uv) {
     return len > 0.0001 ? n / len : vec2(0.0, 0.0);
 }
 
-vec3 getReflection(vec2 n) {
-    float skyLight = smoothstep(0.0, 1.0, n.y);
-    return mix(vec3(0.05, 0.1, 0.15), vec3(0.8, 0.9, 1.0), skyLight);
-}
-
 void main() {
     vec2 screenUV = gl_FragCoord.xy / u_resolution.xy;
 
-    float padding = 6.0;
-    float viewHeight = u_container_size.y + padding;
+    float viewHeight = u_container_size.y;
 
     vec2 simPos = u_container_pos + vec2(
         (screenUV.x - 0.5) * viewHeight * (u_resolution.x / u_resolution.y),
@@ -61,75 +55,36 @@ void main() {
     vec3 col = vec3(0.0);
     float alpha = 0.0;
 
-    if (dGlass < 0.05) {
-        bool isWater = (dWater < 0.0 && dGlass < -0.05);
+    if (dWater < 0.0 && dGlass < 0.0) {
+        vec2 waterNormal = getWaterNormal(waterUV);
 
-        if (isWater) {
-            vec2 waterNormal = getWaterNormal(waterUV);
-            float edgeDist = abs(dGlass + 0.05);
-            if (edgeDist < 0.1) {
-                waterNormal.y += smoothstep(0.1, 0.0, edgeDist) * 0.8;
-                waterNormal = normalize(waterNormal);
-            }
-
-            float opticalDepth = abs(dWater);
-            vec3 extinction = exp(-opticalDepth * vec3(0.3, 0.15, 0.05));
-            vec3 waterTint = vec3(0.1, 0.5, 0.8);
-
-            col = waterTint * (1.0 - extinction) * 0.8;
-            alpha = mix(0.75, 0.35, (extinction.r + extinction.g + extinction.b) / 3.0);
-
-            float surfaceMask = smoothstep(0.3, 0.0, abs(dWater));
-            vec3 reflection = getReflection(waterNormal);
-            float fresnel = pow(1.0 - max(dot(waterNormal, vec2(0.0, 1.0)), 0.0), 4.0);
-            col += reflection * fresnel * 0.6 * surfaceMask;
-            alpha += fresnel * 0.5 * surfaceMask;
-
-            float specA = pow(max(dot(waterNormal, normalize(vec2(0.5, 1.0))), 0.0), 64.0);
-            float specB = pow(max(dot(waterNormal, normalize(vec2(-0.4, 0.8))), 0.0), 128.0);
-            float spec = (specA + specB) * 0.8 * surfaceMask;
-            col += vec3(1.0) * spec;
-            alpha += spec;
-
-            float w = max(fwidth(dWater), 0.001);
-            float surfaceLine = 1.0 - smoothstep(0.0, w * 2.0, abs(dWater));
-            float meniscus = smoothstep(0.1, 0.0, abs(dGlass + 0.05));
-            float highlightIntensity = 0.5 + meniscus * 0.5;
-            col += vec3(1.0) * surfaceLine * highlightIntensity;
-            alpha += surfaceLine * highlightIntensity;
-
-        } else if (dGlass < 0.0) {
-            col = vec3(0.9, 0.95, 1.0);
-            alpha = 0.08;
+        float edgeDist = abs(dGlass);
+        if (edgeDist < 0.1) {
+            waterNormal.y += smoothstep(0.1, 0.0, edgeDist) * 0.8;
+            waterNormal = normalize(waterNormal);
         }
 
-        if (dGlass < 0.0) {
-            float innerGlow = smoothstep(-0.8, 0.0, dGlass);
-            col += vec3(1.0) * innerGlow * 0.15;
-            alpha += innerGlow * 0.15;
+        vec3 waterTint = vec3(0.3, 0.5, 0.9);
+        float fresnel = pow(1.0 - max(dot(waterNormal, vec2(0.0, 1.0)), 0.0), 3.0);
 
-            float highlightTop = smoothstep(0.15, 0.0, abs(p.y - (boxSize.y - 0.3)));
-            col += vec3(1.0) * highlightTop * 0.3;
-            alpha += highlightTop * 0.3;
+        float light = dot(waterNormal, normalize(vec2(0.5, 1.0)));
+        vec3 reflection = mix(vec3(0.05, 0.1, 0.2), vec3(1.0, 1.0, 1.2), smoothstep(-0.5, 1.0, light));
 
-            float edgeShadow = smoothstep(0.0, -0.15, dGlass);
-            col *= mix(0.7, 1.0, edgeShadow);
-        }
+        col = waterTint * 0.4 + reflection * fresnel * 0.8;
+        alpha = mix(0.4, 0.85, fresnel);
+
+        float spec = pow(max(dot(waterNormal, normalize(vec2(0.3, 0.8))), 0.0), 64.0);
+        col += vec3(1.0) * spec * 1.5;
+        alpha += spec;
+
+        float w = max(fwidth(dWater), 0.001);
+        float surfaceLine = 1.0 - smoothstep(0.0, w * 2.0, abs(dWater));
+        col += vec3(1.0) * surfaceLine;
+        alpha += surfaceLine;
     }
 
-    float shadowAlpha = 0.0;
-    if (dGlass > 0.0) {
-        shadowAlpha = (1.0 - smoothstep(0.0, 0.8, dGlass)) * 0.3;
-    }
+    alpha = clamp(alpha, 0.0, 1.0);
+    col *= alpha;
 
-    float aa = smoothstep(0.0, max(fwidth(dGlass), 0.001), dGlass);
-
-    vec4 insideColor = vec4(col, clamp(alpha, 0.0, 1.0));
-    vec4 outsideColor = vec4(0.0, 0.0, 0.0, shadowAlpha);
-
-    vec4 finalColor = mix(insideColor, outsideColor, aa);
-
-    finalColor.rgb *= finalColor.a;
-
-    outColor = finalColor;
+    outColor = vec4(col, alpha);
 }
