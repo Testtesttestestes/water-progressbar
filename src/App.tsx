@@ -24,11 +24,11 @@ export default function App() {
       <div
         className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 transition-all duration-300"
         style={{
-          width: `${(flaskWidth + 6) * 35}px`,
-          height: `${(flaskHeight + 6) * 35}px`,
+          width: `${flaskWidth * 35}px`,
+          height: `${flaskHeight * 35}px`,
         }}
       >
-        <GlassEffect preset="dock" draggable className="h-full w-full">
+        <GlassEffect preset="dock" draggable className="h-full w-full overflow-hidden rounded-[40px]">
           <RealisticProgressBar
             progress={progress}
             isWaving={isWaving}
