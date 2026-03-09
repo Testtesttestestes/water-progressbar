@@ -75,6 +75,13 @@ vec2 cell2uv(in vec2 cell) {
     return idx2uv(cell.y * cellResolution.x + cell.x, cellTexelSizeOffset);
 }
 
+float hash11(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+
 float sdRoundedBox(vec2 p, vec2 b, float r) {
     vec2 q = abs(p) - b + r;
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
@@ -210,11 +217,14 @@ void main(void) {
     float particleIndex = floor(gl_FragCoord.y) * round(1.0 / particleTexelSizeOffset.x) + floor(gl_FragCoord.x);
     float activeCount = u_progress * particleCount;
     float targetActive = step(particleIndex, activeCount - 1.0);
-    float activationRate = 3.0;
+    float activationRate = 0.9;
     float massBlend = clamp(state.y + (targetActive - state.y) * dt * activationRate, 0.0, 1.0);
     float isActive = step(1e-3, massBlend);
+    float justActivated = step(0.5, targetActive) * (1.0 - step(1e-3, state.y));
 
     vec2 acc  = calcAcceleration();
+    if (justActivated > 0.5)
+        acc = vec2(0.0);
 
     float dist_im_sq = dot(pos - pointerPosVel.xy, pos - pointerPosVel.xy);
     if (dist_im_sq < pointerRadius * pointerRadius) {
@@ -265,7 +275,17 @@ void main(void) {
     if (dot(vel, vel) > velLimit * velLimit)
         vel  = velLimit * normalize(vel);
     
-    if (isActive < 0.5) {
+    if (justActivated > 0.5) {
+        float spawnJitter = (hash11(particleIndex + floor(u_time * 5.0)) - 0.5) * 0.35;
+        vec2 spawnLocal = vec2(spawnJitter, -(boxSize.y - boxRadius) - 0.35 * dp);
+        vec2 spawnWorld = vec2(
+            cos(angle) * spawnLocal.x + sin(angle) * spawnLocal.y,
+            -sin(angle) * spawnLocal.x + cos(angle) * spawnLocal.y
+        ) + u_container_pos;
+        pos = spawnWorld;
+        velh = vec2(0.0);
+        vel = vec2(0.0);
+    } else if (isActive < 0.5) {
         pos = vec2(domainRadius * 2.0);
         velh = vec2(0.0);
         vel = vec2(0.0);
