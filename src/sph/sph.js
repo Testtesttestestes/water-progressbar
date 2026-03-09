@@ -27,7 +27,7 @@ let _gl;
 
 const _gravity       = new Vec2(0, -10);
 const _rho0          = 1000; //1000だと圧力が半精度では表現できなくなるので適当な値にする
-const _viscosity     = 0.1 * _rho0;
+const _viscosity     = 0.18 * _rho0;
 const _surfTension   = 2;
 
 const _vertSources = [
@@ -106,8 +106,8 @@ let _containerKinematics = {
     wallRepulsionScale: 4.0,
     wallNormalViscScale: 0.12,
     wallTangentialViscScale: 0.45,
-    wallTangentialFriction: 8.0,
-    wallNormalRestitution: 0.15,
+    wallTangentialFriction: 11.0,
+    wallNormalRestitution: 0.02,
     wallMaxNormalEnergy: 5.0,
 };
 
