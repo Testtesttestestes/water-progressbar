@@ -64,6 +64,8 @@ let _simToClip = { scale: new Vec2(1), move: Vec2.zero() };
 
 let _time = 0.0;
 let _waveAmplitude = 0.0;
+let _containerPos = new Vec2(0.0, 3.0);
+let _containerAngle = 0.0;
 
 export const loadShaderFilesAsync = async () => {
     // Shaders are imported synchronously via Vite ?raw
@@ -97,9 +99,11 @@ export const init = (gl, canvas, meshSize, meshingAreaMin, meshingAreaMax, { mes
     ]);
 };
 
-export const setAnimationParams = (time, waveAmplitude) => {
+export const setAnimationParams = (time, waveAmplitude, containerPos = null, containerAngle = null) => {
     _time = time;
     _waveAmplitude = waveAmplitude;
+    if (containerPos) _containerPos = containerPos;
+    if (containerAngle !== null) _containerAngle = containerAngle;
 };
 
 export const setRenderingSimulationArea = (min, max) => {
@@ -149,6 +153,8 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
     _gl.uniform2f(_marchingSquaresProgram.uniform('u_resolution'), _canvas.width, _canvas.height);
     _gl.uniform1f(_marchingSquaresProgram.uniform('u_time'), _time);
     _gl.uniform1f(_marchingSquaresProgram.uniform('u_wave_amplitude'), _waveAmplitude);
+    _gl.uniform2f(_marchingSquaresProgram.uniform('u_container_pos'), _containerPos.x, _containerPos.y);
+    _gl.uniform1f(_marchingSquaresProgram.uniform('u_container_angle'), _containerAngle);
     _gl.uniform2f(_marchingSquaresProgram.uniform('u_sim_min'), _cellOrigin.x, _cellOrigin.y);
     _gl.uniform2f(_marchingSquaresProgram.uniform('u_sim_size'), _resolution.x * _cellSize, _resolution.y * _cellSize);
     GLU.bindTextureUniform(_gl, 0, _marchingSquaresProgram.uniform('distanceFieldTex'), _distanceFieldFBO.texture('tex'));

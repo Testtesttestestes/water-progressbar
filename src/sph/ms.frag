@@ -6,6 +6,8 @@ uniform vec2 u_resolution;
 uniform sampler2D distanceFieldTex; // Текстура с физикой воды от SPH
 uniform float u_time;
 uniform float u_wave_amplitude;
+uniform vec2 u_container_pos;
+uniform float u_container_angle;
 uniform vec2 u_sim_min;
 uniform vec2 u_sim_size;
 
@@ -59,15 +61,10 @@ void main() {
     vec2 boxSize = vec2(5.0, 1.5);
     float boxRadius = 0.8;
     
-    // Анимация (вращение и покачивание)
-    float angle = sin(u_time * 1.2) * 0.15 * u_wave_amplitude;
-    float offsetX = sin(u_time * 0.8) * 1.0 * u_wave_amplitude;
-    
+    float angle = u_container_angle;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    vec2 p = simPos;
-    p.y -= 3.0; // Offset up
-    p.x -= offsetX;
-    p = rot * p;
+    mat2 invRot = transpose(rot);
+    vec2 p = invRot * (simPos - u_container_pos);
 
     float dGlass = sdRoundedBox(p, boxSize, boxRadius);
 
@@ -87,8 +84,8 @@ void main() {
             sdRoundedBox(p + e.xy, boxSize, boxRadius) - sdRoundedBox(p - e.xy, boxSize, boxRadius),
             sdRoundedBox(p + e.yx, boxSize, boxRadius) - sdRoundedBox(p - e.yx, boxSize, boxRadius)
         ));
-        // Возвращаем нормаль в мировое пространство (обратное вращение)
-        glassNormal = vec2(cos(-angle) * glassNormal.x - sin(-angle) * glassNormal.y, sin(-angle) * glassNormal.x + cos(-angle) * glassNormal.y);
+        // Возвращаем нормаль в мировое пространство
+        glassNormal = rot * glassNormal;
         
         // Маска воды
         if (dWater < 0.0 && dGlass < -0.05) {

@@ -9,12 +9,13 @@ import { RealisticProgressBar } from './components/RealisticProgressBar';
 export default function App() {
   const [progress, setProgress] = useState(0.5);
   const [isWaving, setIsWaving] = useState(false);
+  const [tiltAngle, setTiltAngle] = useState(0);
 
   return (
   <div className="relative h-screen w-full overflow-hidden bg-gray-900">
     {/* 1. Слой с водой (Канвас) — занимает весь экран на заднем плане */}
     <div className="absolute inset-0 z-0">
-      <RealisticProgressBar progress={progress} isWaving={isWaving} />
+      <RealisticProgressBar progress={progress} isWaving={isWaving} tiltAngle={tiltAngle} />
     </div>
 
     {/* 2. Слой интерфейса — только маленькая плашка внизу */}
@@ -43,6 +44,22 @@ export default function App() {
             onChange={(e) => setProgress(parseFloat(e.target.value))}
             className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
           />
+
+          <div>
+            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
+              <span>Tilt</span>
+              <span>{Math.round((tiltAngle * 180) / Math.PI)}°</span>
+            </div>
+            <input
+              type="range"
+              min={(-30 * Math.PI) / 180}
+              max={(30 * Math.PI) / 180}
+              step={0.005}
+              value={tiltAngle}
+              onChange={(e) => setTiltAngle(parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+          </div>
 
           {/* Кнопка */}
           <button
