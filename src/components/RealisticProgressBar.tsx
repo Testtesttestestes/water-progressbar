@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from 'react';
-import * as GLU from '../sph/glutils.js';
 import { Vec2 } from '../sph/mathtype.js';
 import * as Renderer from '../sph/renderer.js';
 import * as SPH from '../sph/sph.js';
@@ -41,6 +40,26 @@ const MESH_QUALITY_FACTORS: Record<NonNullable<RealisticProgressBarProps['meshQu
   high: 4,
   balanced: 2,
   low: 1,
+};
+
+const createRuntimeBackgroundTexture = (gl: WebGL2RenderingContext) => {
+  const texture = gl.createTexture();
+  if (!texture) return null;
+
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  const pixels = new Uint8Array([
+    16, 23, 42, 255,
+    24, 41, 72, 255,
+    10, 16, 32, 255,
+    18, 30, 56, 255,
+  ]);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  return texture;
 };
 
 export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
@@ -144,15 +163,12 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     let lastTime = performance.now();
 
     const initAsync = async () => {
-      const bgUrl =
-        'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
-      const [bgTex] = await Promise.all([
-        GLU.loadTexture(gl, bgUrl),
-        SPH.loadShaderFilesAsync(),
-        Renderer.loadShaderFilesAsync(),
-      ]);
+      await Promise.all([SPH.loadShaderFilesAsync(), Renderer.loadShaderFilesAsync()]);
+      const bgTex = createRuntimeBackgroundTexture(gl);
 
-      Renderer.setBackgroundTexture(bgTex);
+      if (bgTex) {
+        Renderer.setBackgroundTexture(bgTex);
+      }
       SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
       Renderer.init(gl, canvas, dp, new Vec2(-R0), new Vec2(R0), {
         meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],

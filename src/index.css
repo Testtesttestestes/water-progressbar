@@ -12,6 +12,6 @@
 }
 
 body {
-    background: url('https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop') center/cover no-repeat;
+    background: radial-gradient(circle at 20% 20%, #1e293b 0%, #0b1120 45%, #020617 100%);
     min-height: 100vh;
 }

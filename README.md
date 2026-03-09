@@ -36,6 +36,7 @@ const bar = createWaterProgressBar(host, {
 });
 
 bar.update({ progress: 0.8, isWaving: false });
+bar.setProgress(92); // принимает 0..1 и 0..100
 // ...
 bar.destroy();
 ```
@@ -49,6 +50,7 @@ bar.destroy();
 Возвращает `WaterProgressBarInstance`:
 
 - `update(nextOptions)` — частичное обновление параметров.
+- `setProgress(progress)` — быстрое обновление прогресса (`0..1` или `0..100`).
 - `destroy()` — удаление капсулы и размонтирование React-root.
 - `getOptions()` — чтение текущей конфигурации.
 - `element` — DOM-элемент обёртки капсулы.
