@@ -495,6 +495,7 @@ const _sortParticles = () => {
     _sortParticlesProgram.use();
     _posVelWriteFBO.bind();
     _gl.uniform1f(_sortParticlesProgram.uniform('particleCount'), _particleCount);
+    _gl.uniform1f(_sortParticlesProgram.uniform('u_progress'), _progress);
     GLU.bindTextureUniform(_gl, 0, _sortParticlesProgram.uniform('scanTex'),    _cellBeginEndFBO.texture('scan'));
     GLU.bindTextureUniform(_gl, 1, _sortParticlesProgram.uniform('subcellTex'), _aggregateSubcellFBO.texture('subcell'));
     GLU.bindTextureUniform(_gl, 2, _sortParticlesProgram.uniform('indexTex'),   _writeIndexFBO.texture('tex'));

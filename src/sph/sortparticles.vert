@@ -16,6 +16,7 @@ layout(std140) uniform Subcell {
 };
 
 uniform float particleCount;
+uniform float u_progress;
 uniform sampler2D scanTex;
 uniform isampler2D subcellTex;
 uniform sampler2D indexTex;
@@ -47,13 +48,16 @@ vec2 idx2uv(in float idx) {
 void main(void) {
     float idx = float(gl_VertexID);
     vOldUV = idx2uv(idx);
+    float activeCount = floor(u_progress * particleCount + 1e-5);
     vec2  pos = vec2(texture(intPosTex, vOldUV).xy) * toFloatPos;
     ivec2 cell = ivec2(floor((pos - cellOrigin) * rcplCellSize));
     ivec2 subcell = ivec2(floor((pos - sebcellOrigin) * rcplSubcellSize));
 
     float order = orderInsideCell(idx, cell, subcell);
+    // Keep inactive particles index-stable to avoid collisions on a single output pixel.
+    bool isInactive = idx >= activeCount;
     // 1回だけならサブセルに3粒子存在しても対応できる
-    float newIdx = order < 0.0 ? particleCount - 1.0 : floor(texelFetch(scanTex, cell, 0).x) + order;
+    float newIdx = isInactive ? idx : (order < 0.0 ? idx : floor(texelFetch(scanTex, cell, 0).x) + order);
     vec2  newUV  = idx2uv(newIdx);
     gl_Position  = vec4(newUV * 2.0 - 1.0, 0, 1);
     gl_PointSize = 1.0;
