@@ -32,7 +32,6 @@ const bar = createWaterProgressBar(host, {
   left: '24px',
   isWaving: true,
   meshQuality: 'balanced',
-  borderRadius: '999px',
 });
 
 bar.update({ progress: 0.8, isWaving: false });
@@ -45,7 +44,7 @@ bar.destroy();
 
 ### `createWaterProgressBar(mountNode, initialOptions)`
 
-Создаёт внутри `mountNode` обёртку и монтирует в неё WebGL-капсулу.
+Создаёт внутри `mountNode` обёртку и монтирует в неё WebGL-капсулу (сама колба с водой, без фоновой подложки).
 
 Возвращает `WaterProgressBarInstance`:
 
@@ -67,7 +66,6 @@ bar.destroy();
 - `zIndex: number` — слой обёртки.
 - `wrapperClassName: string` — CSS-классы обёртки.
 - `canvasClassName: string` — CSS-классы canvas.
-- `borderRadius: string` — радиус скругления обёртки.
 
 ## Стенд тестирования API
 
