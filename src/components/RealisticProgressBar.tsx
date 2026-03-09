@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import * as GLU from '../sph/glutils.js';
 import { Vec2 } from '../sph/mathtype.js';
 import * as Renderer from '../sph/renderer.js';
 import * as SPH from '../sph/sph.js';
@@ -29,6 +30,25 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const handleMouseMove = (e: MouseEvent) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        let clipX = (x / canvas.width) * 2 - 1;
+        let clipY = -((y / canvas.height) * 2 - 1);
+        
+        const simPos = Renderer.clipPosToSimPos(new Vec2(clipX, clipY));
+        SPH.setPointerPos(simPos);
+    };
+
+    const handleMouseLeave = () => {
+        SPH.setPointerPos(new Vec2(0, 0));
+    };
+
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseleave', handleMouseLeave);
+
     let gl = canvas.getContext('webgl2');
     if (!gl) {
         console.error('WebGL2 unsupported.');
@@ -39,34 +59,34 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
         return;
     }
 
-    const R0 = 8;
-    const dp = R0 / 64;
+    const R0 = 12;
+    const dp = 8 / 64;
     const fluidDomainR = 0.95 * R0;
 
-    const createParticlesCapsule = () => {
+    const createParticlesRoundedBox = () => {
         let pos = [];
-        let capA = {x: -6.0, y: 0.0};
-        let capB = {x: 6.0, y: 0.0};
-        let capRadius = 1.5;
+        let boxSize = {x: 5.0, y: 1.5};
+        let boxRadius = 0.8;
         
         let minX = -7.5;
         let maxX = 7.5;
-        let minY = -1.5;
-        let maxY = 1.5;
+        let minY = -1.0;
+        let maxY = 5.0;
         
-        for (let x = minX; x <= maxX; x += dp * 0.85) {
-            for (let y = minY; y <= maxY; y += dp * 0.85) {
-                let paX = x - capA.x, paY = y - capA.y;
-                let baX = capB.x - capA.x, baY = capB.y - capA.y;
-                let dotPaBa = paX * baX + paY * baY;
-                let dotBaBa = baX * baX + baY * baY;
-                let h = Math.max(0, Math.min(1, dotPaBa / dotBaBa));
-                let distX = paX - baX * h;
-                let distY = paY - baY * h;
-                let dist = Math.sqrt(distX * distX + distY * distY);
+        const sdRoundedBox = (px: number, py: number, bx: number, by: number, r: number) => {
+            let qx = Math.abs(px) - bx + r;
+            let qy = Math.abs(py) - by + r;
+            let extX = Math.max(qx, 0);
+            let extY = Math.max(qy, 0);
+            return Math.min(Math.max(qx, qy), 0.0) + Math.sqrt(extX * extX + extY * extY) - r;
+        };
+
+        for (let x = minX; x <= maxX; x += dp * 1.05) {
+            for (let y = minY; y <= maxY; y += dp * 1.05) {
+                let dist = sdRoundedBox(x, y - 2.0, boxSize.x, boxSize.y, boxRadius);
                 
-                // Fill up to 50% so there is room for the water to move
-                if (dist < capRadius - dp && x < 0.0) {
+                // Fill the volume
+                if (dist < -dp * 0.5) {
                     pos.push(x, y);
                 }
             }
@@ -78,8 +98,15 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
     let lastTime = performance.now();
 
     const initAsync = async () => {
-        await Promise.all([SPH.loadShaderFilesAsync(), Renderer.loadShaderFilesAsync()]);
-        SPH.init(gl, dp, fluidDomainR, createParticlesCapsule());
+        const bgUrl = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
+        const [bgTex] = await Promise.all([
+            GLU.loadTexture(gl, bgUrl),
+            SPH.loadShaderFilesAsync(), 
+            Renderer.loadShaderFilesAsync()
+        ]);
+        
+        Renderer.setBackgroundTexture(bgTex);
+        SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
         Renderer.init(gl, canvas, dp/2, new Vec2(-R0), new Vec2(R0));
         Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
 
@@ -117,15 +144,25 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
         if (animationFrameId) {
             cancelAnimationFrame(animationFrameId);
         }
+        canvas.removeEventListener('mousemove', handleMouseMove);
+        canvas.removeEventListener('mouseleave', handleMouseLeave);
     };
   }, []);
 
   return (
-    <div className={className} style={{ position: 'relative', width: '100%', height: '100px', maxWidth: '600px', margin: '0 auto' }}>
-      <canvas 
-        ref={canvasRef} 
-        style={{ width: '100%', height: '100%', display: 'block' }} 
-      />
-    </div>
+    <canvas 
+      ref={canvasRef} 
+      className={className}
+      style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        width: '100vw', 
+        height: '100vh', 
+        display: 'block', 
+        zIndex: -1,
+        pointerEvents: 'auto'
+      }} 
+    />
   );
 };

@@ -51,6 +51,7 @@ let _weightedCenterFBO;
 let _distanceFieldFBO;
 
 let _tabelTex;
+let _bgTex;
 
 let _resolution;
 let _cellSize;
@@ -108,12 +109,16 @@ export const clipPosToSimPos = (clipPos) => {
     return Vec2.div(Vec2.sub(clipPos, _simToClip.move), _simToClip.scale);
 };
 
+export const setBackgroundTexture = (tex) => {
+    _bgTex = tex;
+};
+
 export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, cellBeginEndTex) => {
     if (_smoothPosFBO.width() !== particleTexReso.x || _smoothPosFBO.height() !== particleTexReso.y) {
         _smoothPosFBO.resize(particleTexReso.x, particleTexReso.y);
     }
 
-    let smoothRadius = 3.25 * dp;
+    let smoothRadius = 3.0 * dp;
 
     _smoothPosProgram.use();
     _smoothPosFBO.bind();
@@ -131,7 +136,7 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
 
     _distanceFieldProgram.use();
     _distanceFieldFBO.bind();
-    _gl.uniform1f(_distanceFieldProgram.uniform('particleRadius'), dp * 0.8);
+    _gl.uniform1f(_distanceFieldProgram.uniform('particleRadius'), dp * 8.5);
     GLU.bindTextureUniform(_gl, 0, _distanceFieldProgram.uniform('weightedCenterTex'), _weightedCenterFBO.texture('tex'));
     _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 
@@ -142,7 +147,12 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
     _gl.uniform2f(_marchingSquaresProgram.uniform('u_resolution'), _canvas.width, _canvas.height);
     _gl.uniform1f(_marchingSquaresProgram.uniform('u_time'), _time);
     _gl.uniform1f(_marchingSquaresProgram.uniform('u_wave_amplitude'), _waveAmplitude);
+    _gl.uniform2f(_marchingSquaresProgram.uniform('u_sim_min'), _cellOrigin.x, _cellOrigin.y);
+    _gl.uniform2f(_marchingSquaresProgram.uniform('u_sim_size'), _resolution.x * _cellSize, _resolution.y * _cellSize);
     GLU.bindTextureUniform(_gl, 0, _marchingSquaresProgram.uniform('distanceFieldTex'), _distanceFieldFBO.texture('tex'));
+    if (_bgTex) {
+        GLU.bindTextureUniform(_gl, 1, _marchingSquaresProgram.uniform('u_bg_tex'), _bgTex);
+    }
     _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 };
 

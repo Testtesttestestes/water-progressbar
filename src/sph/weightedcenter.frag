@@ -40,9 +40,15 @@ void main(void) {
     vec4  wx_i   = vec4(0);
     float R_sq   = smoothRadius * smoothRadius;
 
-    for (float cy = -2.; cy <= 2.; cy++) {
-        vec2 uv_cb = cell2uv(vec2(cell_i.x - 1.0, cell_i.y + cy));
-        vec2 uv_ce = cell2uv(vec2(cell_i.x + 1.0, cell_i.y + cy));
+    for (float cy = -3.; cy <= 3.; cy++) {
+        float y = cell_i.y + cy;
+        if (y < 0.0 || y >= cellResolution.y) continue;
+        
+        float cx_min = max(cell_i.x - 3.0, 0.0);
+        float cx_max = min(cell_i.x + 3.0, cellResolution.x - 1.0);
+        
+        vec2 uv_cb = cell2uv(vec2(cx_min, y));
+        vec2 uv_ce = cell2uv(vec2(cx_max, y));
         float begin = vec2(texture(cellBeginEndTex, uv_cb).xy).x;
         float end   = vec2(texture(cellBeginEndTex, uv_ce).xy).y;
 

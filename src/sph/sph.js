@@ -26,7 +26,7 @@ import sortparticlesFrag from './sortparticles.frag?raw';
 let _gl;
 
 const _gravity       = new Vec2(0, -10);
-const _rho0          = 2000; //1000だと圧力が半精度では表現できなくなるので適当な値にする
+const _rho0          = 1; //1000だと圧力が半精度では表現できなくなるので適当な値にする
 const _viscosity     = 0.1 * _rho0;
 const _surfTension   = 2;
 
@@ -324,6 +324,8 @@ const _initWallKernelTex = () => {
 const _calcPressure = () => {
     _calcPressureProgram.use();
     _calcPressureFBO.bind();
+    _gl.uniform1f(_calcPressureProgram.uniform('u_time'), _time);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_wave_amplitude'), _waveAmplitude);
     GLU.bindTextureUniform(_gl, 0, _calcPressureProgram.uniform('intPosTex'),       _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 1, _calcPressureProgram.uniform('velTex'),          _posVelReadFBO.texture('vel'));
     GLU.bindTextureUniform(_gl, 2, _calcPressureProgram.uniform('cellBeginEndTex'), _cellBeginEndFBO.texture('cellBeginEnd'));

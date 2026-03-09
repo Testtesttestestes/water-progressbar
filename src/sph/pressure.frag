@@ -28,6 +28,8 @@ uniform isampler2D intPosTex;
 uniform sampler2D  velTex;
 uniform usampler2D cellBeginEndTex;
 uniform sampler2D  densWallKerTex;
+uniform float u_time;
+uniform float u_wave_amplitude;
 
 out vec4 o;
 
@@ -41,10 +43,9 @@ vec2 cell2uv(in vec2 cell) {
     return idx2uv(cell.y * cellResolution.x + cell.x, cellTexelSizeOffset);
 }
 
-float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
-    vec2 pa = p - a, ba = b - a;
-    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-    return length(pa - ba * h) - r;
+float sdRoundedBox(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
 void main(void) {
@@ -67,10 +68,20 @@ void main(void) {
         }
     }
 
-    vec2 capA = vec2(-6.0, 0.0);
-    vec2 capB = vec2(6.0, 0.0);
-    float capRadius = 1.5;
-    float dist_iw = -sdCapsule(pos_i, capA, capB, capRadius) + 0.5 * dp;
+    vec2 boxSize = vec2(5.0, 1.5);
+    float boxRadius = 0.8;
+    
+    // Apply animation (must match ms.frag)
+    float angle = sin(u_time * 1.2) * 0.15 * u_wave_amplitude;
+    float offsetX = sin(u_time * 0.8) * 1.0 * u_wave_amplitude;
+    
+    mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+    vec2 p = pos_i;
+    p.y -= 2.0; // Offset up
+    p.x -= offsetX;
+    p = rot * p;
+
+    float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
     float u_w = dist_iw * rcplKernelRadius;
     if (u_w < 1.0)
         rho_i += texture(densWallKerTex, vec2(u_w, 0.5)).x;

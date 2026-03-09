@@ -40,12 +40,19 @@ void main(void) {
     float smoothRadiusSq = smoothRadius * smoothRadius;
     float smoothRadiusCb = smoothRadiusSq * smoothRadius;
 
-    for (float cy = -1.; cy <= 1.; cy++) {
-        vec2 uv_c = cell2uv(vec2(cell_i.x, cell_i.y + cy));
+    for (float cy = -3.; cy <= 3.; cy++) {
+        float y = cell_i.y + cy;
+        if (y < 0.0 || y >= cellResolution.y) continue;
+        
+        float cx_min = max(cell_i.x - 3.0, 0.0);
+        float cx_max = min(cell_i.x + 3.0, cellResolution.x - 1.0);
+        
+        vec2 uv_cb = cell2uv(vec2(cx_min, y));
+        vec2 uv_ce = cell2uv(vec2(cx_max, y));
+        float begin = vec2(texture(cellBeginEndTex, uv_cb).xy).x;
+        float end   = vec2(texture(cellBeginEndTex, uv_ce).xy).y;
 
-        vec2 begEnd = vec2(texture(cellBeginEndTex, uv_c).xy);
-
-        for (float j = begEnd.x; j < begEnd.y; j++) {
+        for (float j = begin; j < end; j++) {
             vec2 uv_j = idx2uv(j, particleTexelSizeOffset);
 
             vec2  pos_j  = vec2(texture(intPosTex, uv_j).xy) * toFloatPos;

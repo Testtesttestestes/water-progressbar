@@ -58,16 +58,17 @@ vec2 cell2uv(in vec2 cell) {
     return idx2uv(cell.y * cellResolution.x + cell.x, cellTexelSizeOffset);
 }
 
-float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
-    vec2 pa = p - a, ba = b - a;
-    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-    return length(pa - ba * h) - r;
+float sdRoundedBox(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
-vec2 calcCapsuleNormal(vec2 p, vec2 a, vec2 b, float r) {
-    vec2 pa = p - a, ba = b - a;
-    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-    return normalize(pa - ba * h);
+vec2 calcRoundedBoxNormal(vec2 p, vec2 b, float r) {
+    vec2 e = vec2(0.01, 0.0);
+    return normalize(vec2(
+        sdRoundedBox(p + e.xy, b, r) - sdRoundedBox(p - e.xy, b, r),
+        sdRoundedBox(p + e.yx, b, r) - sdRoundedBox(p - e.yx, b, r)
+    ));
 }
 
 vec2 calcAcceleration() {
@@ -125,24 +126,26 @@ vec2 calcAcceleration() {
         }
     }
 
-    vec2 capA = vec2(-6.0, 0.0);
-    vec2 capB = vec2(6.0, 0.0);
+    vec2 boxSize = vec2(5.0, 1.5);
+    float boxRadius = 0.8;
     
-    // Apply animation
-    float angle = sin(u_time * 2.0) * 0.261799 * u_wave_amplitude; // 15 degrees in radians
-    float offsetX = sin(u_time * 1.5) * 1.5 * u_wave_amplitude;
+    // Apply animation (must match ms.frag)
+    float angle = sin(u_time * 1.2) * 0.15 * u_wave_amplitude;
+    float offsetX = sin(u_time * 0.8) * 1.0 * u_wave_amplitude;
     
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    capA = rot * capA;
-    capB = rot * capB;
-    capA.x += offsetX;
-    capB.x += offsetX;
+    vec2 p = pos_i;
+    p.y -= 2.0; // Offset up
+    p.x -= offsetX;
+    p = rot * p;
 
-    float capRadius = 1.5;
-    float dist_iw = -sdCapsule(pos_i, capA, capB, capRadius) + 0.5 * dp;
+    float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
     if (dist_iw < kernelRadius) {
         vec2  accWKer = texture(accWallKerTex, vec2(dist_iw * rcplKernelRadius, 0.5)).xy;
-        vec2  posDir  = calcCapsuleNormal(pos_i, capA, capB, capRadius);
+        vec2  posDir  = calcRoundedBoxNormal(p, boxSize, boxRadius);
+        // Transform normal back to world space
+        posDir = vec2(cos(-angle) * posDir.x - sin(-angle) * posDir.y, sin(-angle) * posDir.x + cos(-angle) * posDir.y);
+        
         float pres    = max((pr_i.x + rho0 * dot(g, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
         float repul   = 10.0 * coefRepul * clamp(dp - dist_iw, 0.0, 0.5 * dp);
         acc_i += (pres * accWKer.x - repul) * posDir + 0.2 * coefViscosity * vel_i * pr_i.y * rcplRho0 * accWKer.y;
@@ -174,7 +177,7 @@ void main(void) {
     if (pos.x > 500.0) {
         // Just became active! Teleport to top of capsule
         float randX = fract(sin(particleIndex * 12.9898) * 43758.5453) * 10.0 - 5.0;
-        pos = vec2(randX, 1.0);
+        pos = vec2(randX, 3.0);
         velh = vec2(0.0, -2.0);
     }
 

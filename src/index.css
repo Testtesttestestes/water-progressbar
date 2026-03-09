@@ -1,1 +1,17 @@
 @import "tailwindcss";
+
+:root {
+    --tint-color: 255, 255, 255;
+    --tint-opacity: 0.06;
+    --shadow-blur: 20px;
+    --shadow-spread: -5px;
+    --shadow-color: rgba(255, 255, 255, 0.45);
+    --outer-shadow-blur: 24px;
+    --glass-radius: 60px;
+    --accent: #8b7cf7;
+}
+
+body {
+    background: url('https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop') center/cover no-repeat;
+    min-height: 100vh;
+}

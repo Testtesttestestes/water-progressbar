@@ -11,17 +11,19 @@ export default function App() {
   const [isWaving, setIsWaving] = useState(false);
 
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8">
-      <div className="w-full max-w-2xl space-y-12">
+    <div className="min-h-screen flex flex-col items-center justify-center p-8">
+      <RealisticProgressBar progress={progress} isWaving={isWaving} />
+      
+      <div className="w-full max-w-2xl space-y-12 bg-black/20 backdrop-blur-md p-12 rounded-3xl border border-white/10 shadow-2xl relative z-10">
         <div className="text-center space-y-4">
-          <h1 className="text-3xl font-medium text-gray-900 tracking-tight">Realistic Water Shader</h1>
-          <p className="text-gray-500">WebGL SDF Rendering</p>
+          <h1 className="text-3xl font-medium text-white tracking-tight">Realistic Water Shader</h1>
+          <p className="text-white/60">WebGL SPH Simulation</p>
         </div>
 
-        <RealisticProgressBar progress={progress} isWaving={isWaving} />
+        <div className="h-32" /> {/* Spacer for the capsule area */}
 
         <div className="space-y-4 max-w-md mx-auto">
-          <div className="flex justify-between text-sm font-medium text-gray-500">
+          <div className="flex justify-between text-sm font-medium text-white/50">
             <span>0%</span>
             <span>{Math.round(progress * 100)}%</span>
             <span>100%</span>
@@ -33,15 +35,15 @@ export default function App() {
             step="0.01"
             value={progress}
             onChange={(e) => setProgress(parseFloat(e.target.value))}
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
           />
           <div className="flex justify-center pt-4">
             <button
               onClick={() => setIsWaving(!isWaving)}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              className={`px-6 py-2 rounded-full font-medium transition-all duration-300 ${
                 isWaving 
-                  ? 'bg-blue-500 text-white hover:bg-blue-600' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-white text-black hover:bg-white/90 scale-105' 
+                  : 'bg-white/10 text-white hover:bg-white/20 border border-white/20'
               }`}
             >
               {isWaving ? 'Stop Waves' : 'Generate Waves'}

@@ -33,8 +33,8 @@ canvas.addEventListener('touchmove', e => {
 );
 canvas.addEventListener('touchend', _ => pointerCanvasPos = undefined);
 
-const R0 = 8;
-const dp = R0 / 64;
+const R0 = 12;
+const dp = 8 / 64;
 const fluidDomainR = 0.95 * R0;
 
 const createParticlesCircular = () => {
