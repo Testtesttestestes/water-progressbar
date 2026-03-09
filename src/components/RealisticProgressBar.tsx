@@ -49,7 +49,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   isWaving = false,
   tiltAngle = 0,
   className,
-  meshQuality = 'balanced',
+  meshQuality = 'low',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef(progress);
