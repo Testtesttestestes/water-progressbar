@@ -51,7 +51,6 @@ let _weightedCenterFBO;
 let _distanceFieldFBO;
 
 let _tabelTex;
-let _bgTex;
 
 let _resolution;
 let _cellSize;
@@ -120,9 +119,6 @@ export const clipPosToSimPos = (clipPos) => {
     return Vec2.div(Vec2.sub(clipPos, _simToClip.move), _simToClip.scale);
 };
 
-export const setBackgroundTexture = (tex) => {
-    _bgTex = tex;
-};
 
 export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, cellBeginEndTex) => {
     if (_smoothPosFBO.width() !== particleTexReso.x || _smoothPosFBO.height() !== particleTexReso.y) {
@@ -164,9 +160,6 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
     _gl.uniform2f(_marchingSquaresProgram.uniform('u_sim_min'), _cellOrigin.x, _cellOrigin.y);
     _gl.uniform2f(_marchingSquaresProgram.uniform('u_sim_size'), _resolution.x * _cellSize, _resolution.y * _cellSize);
     GLU.bindTextureUniform(_gl, 0, _marchingSquaresProgram.uniform('distanceFieldTex'), _distanceFieldFBO.texture('tex'));
-    if (_bgTex) {
-        GLU.bindTextureUniform(_gl, 1, _marchingSquaresProgram.uniform('u_bg_tex'), _bgTex);
-    }
     _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 };
 

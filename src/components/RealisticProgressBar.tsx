@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from 'react';
-import * as GLU from '../sph/glutils.js';
 import { Vec2 } from '../sph/mathtype.js';
 import * as Renderer from '../sph/renderer.js';
 import * as SPH from '../sph/sph.js';
@@ -101,7 +100,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseleave', handleMouseLeave);
 
-    let gl = canvas.getContext('webgl2');
+    let gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true });
     if (!gl) {
         console.error('WebGL2 unsupported.');
         return;
@@ -150,14 +149,11 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     let lastTime = performance.now();
 
     const initAsync = async () => {
-        const bgUrl = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
-        const [bgTex] = await Promise.all([
-            GLU.loadTexture(gl, bgUrl),
-            SPH.loadShaderFilesAsync(), 
-            Renderer.loadShaderFilesAsync()
+        await Promise.all([
+            SPH.loadShaderFilesAsync(),
+            Renderer.loadShaderFilesAsync(),
         ]);
-        
-        Renderer.setBackgroundTexture(bgTex);
+
         SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
         SPH.setContainerSize(new Vec2(flaskWidth, flaskHeight));
         Renderer.init(gl, canvas, dp, new Vec2(-R0), new Vec2(R0), {
