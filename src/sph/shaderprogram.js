@@ -37,6 +37,6 @@ export class ShaderProgram {
             return this.#uniforms[alias];
 
         // debug
-        console.error(`Uniform '${name}' does not exist.`);
+        return null;
     }
 }
