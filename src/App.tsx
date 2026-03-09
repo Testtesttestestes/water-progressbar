@@ -12,22 +12,31 @@ export default function App() {
   const [tiltAngle, setTiltAngle] = useState(0);
   const [flaskWidth, setFlaskWidth] = useState(10);
   const [flaskHeight, setFlaskHeight] = useState(3);
+  const pixelsPerUnit = 64;
+  const flaskContainerWidth = flaskWidth * pixelsPerUnit;
+  const flaskContainerHeight = flaskHeight * pixelsPerUnit;
 
   return (
   <div className="relative h-screen w-full overflow-hidden bg-gray-900">
-    {/* 1. Слой с водой (Канвас) — занимает весь экран на заднем плане */}
-    <div className="absolute inset-0 z-0">
+    <div
+      className="absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2"
+      style={{
+        width: `${flaskContainerWidth}px`,
+        height: `${flaskContainerHeight}px`,
+      }}
+    >
       <RealisticProgressBar
         progress={progress}
         isWaving={isWaving}
         tiltAngle={tiltAngle}
         flaskWidth={flaskWidth}
         flaskHeight={flaskHeight}
+        className="h-full w-full"
       />
     </div>
 
     {/* 2. Слой интерфейса — только маленькая плашка внизу */}
-    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-10">
+    <div className="absolute bottom-6 left-1/2 z-20 w-[90%] max-w-md -translate-x-1/2">
       <div className="bg-black/40 backdrop-blur-md p-5 rounded-3xl border border-white/10 shadow-2xl">
         
         {/* Заголовок и описание в одну строку для экономии места */}
