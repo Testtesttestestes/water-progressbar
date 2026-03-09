@@ -92,6 +92,17 @@ let _pointerVel = Vec2.zero();
 let _progress = 1.0;
 let _time = 0.0;
 let _waveAmplitude = 0.0;
+let _containerKinematics = {
+    position: Vec2.zero(),
+    velocity: Vec2.zero(),
+    acceleration: Vec2.zero(),
+    angle: 0.0,
+    angularVelocity: 0.0,
+    angularAcceleration: 0.0,
+    reverseImpulseStrength: 0.0,
+    reverseImpulseAge: 1e6,
+    reverseDeltaV: Vec2.zero(),
+};
 
 const _helper = {
     sampleParticles5x5: (dp) => {
@@ -168,6 +179,13 @@ export const injectWater = (volumeRatio) => {
 export const setAnimationParams = (time, waveAmplitude) => {
     _time = time;
     _waveAmplitude = waveAmplitude;
+};
+
+export const setContainerKinematics = (kinematics) => {
+    _containerKinematics = {
+        ..._containerKinematics,
+        ...kinematics,
+    };
 };
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -326,6 +344,15 @@ const _calcPressure = () => {
     _calcPressureFBO.bind();
     _gl.uniform1f(_calcPressureProgram.uniform('u_time'), _time);
     _gl.uniform1f(_calcPressureProgram.uniform('u_wave_amplitude'), _waveAmplitude);
+    _gl.uniform2f(_calcPressureProgram.uniform('u_container_pos'), _containerKinematics.position.x, _containerKinematics.position.y);
+    _gl.uniform2f(_calcPressureProgram.uniform('u_container_vel'), _containerKinematics.velocity.x, _containerKinematics.velocity.y);
+    _gl.uniform2f(_calcPressureProgram.uniform('u_container_acc'), _containerKinematics.acceleration.x, _containerKinematics.acceleration.y);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_container_angle'), _containerKinematics.angle);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_container_ang_vel'), _containerKinematics.angularVelocity);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_container_ang_acc'), _containerKinematics.angularAcceleration);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_reverse_impulse_strength'), _containerKinematics.reverseImpulseStrength);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_reverse_impulse_age'), _containerKinematics.reverseImpulseAge);
+    _gl.uniform2f(_calcPressureProgram.uniform('u_reverse_delta_v'), _containerKinematics.reverseDeltaV.x, _containerKinematics.reverseDeltaV.y);
     GLU.bindTextureUniform(_gl, 0, _calcPressureProgram.uniform('intPosTex'),       _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 1, _calcPressureProgram.uniform('velTex'),          _posVelReadFBO.texture('vel'));
     GLU.bindTextureUniform(_gl, 2, _calcPressureProgram.uniform('cellBeginEndTex'), _cellBeginEndFBO.texture('cellBeginEnd'));
@@ -343,6 +370,15 @@ const _updateParticles = () => {
     _gl.uniform1f(_updateParticlesProgram.uniform('particleCount'), _particleCount);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_time'), _time);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_wave_amplitude'), _waveAmplitude);
+    _gl.uniform2f(_updateParticlesProgram.uniform('u_container_pos'), _containerKinematics.position.x, _containerKinematics.position.y);
+    _gl.uniform2f(_updateParticlesProgram.uniform('u_container_vel'), _containerKinematics.velocity.x, _containerKinematics.velocity.y);
+    _gl.uniform2f(_updateParticlesProgram.uniform('u_container_acc'), _containerKinematics.acceleration.x, _containerKinematics.acceleration.y);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_container_angle'), _containerKinematics.angle);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_container_ang_vel'), _containerKinematics.angularVelocity);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_container_ang_acc'), _containerKinematics.angularAcceleration);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse_strength'), _containerKinematics.reverseImpulseStrength);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse_age'), _containerKinematics.reverseImpulseAge);
+    _gl.uniform2f(_updateParticlesProgram.uniform('u_reverse_delta_v'), _containerKinematics.reverseDeltaV.x, _containerKinematics.reverseDeltaV.y);
     GLU.bindTextureUniform(_gl, 0, _updateParticlesProgram.uniform('posTex'),          _posVelReadFBO.texture('posVelh'));
     GLU.bindTextureUniform(_gl, 1, _updateParticlesProgram.uniform('intPosTex'),       _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 2, _updateParticlesProgram.uniform('velTex'),          _calcPressureFBO.texture('tex'));
