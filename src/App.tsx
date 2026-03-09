@@ -14,28 +14,46 @@ export default function App() {
   const [flaskHeight, setFlaskHeight] = useState(3);
 
   return (
-  <div className="relative h-screen w-full overflow-hidden bg-gradient-to-br from-indigo-950 via-purple-900 to-black">
-    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-30 select-none">
-      <h1 className="text-[12vw] font-black text-white mix-blend-overlay leading-none tracking-tighter">WATER</h1>
-      <h1 className="text-[12vw] font-black text-white mix-blend-overlay leading-none tracking-tighter">SHADER</h1>
-    </div>
+    <div className="relative h-screen w-full overflow-hidden bg-gradient-to-br from-indigo-950 via-purple-900 to-black">
+      <svg className="hidden" aria-hidden="true">
+        <defs>
+          <filter id="glass-refraction" x="-20%" y="-20%" width="140%" height="140%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" result="noise" />
+            <feGaussianBlur in="noise" stdDeviation="2" result="smoothedNoise" />
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="smoothedNoise"
+              scale="15"
+              xChannelSelector="R"
+              yChannelSelector="G"
+            />
+          </filter>
+        </defs>
+      </svg>
 
-    <div
-      className="absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2 transition-all duration-300"
-      style={{
-        width: `${(flaskWidth + 6) * 35}px`,
-        height: `${(flaskHeight + 6) * 35}px`,
-      }}
-    >
-      <RealisticProgressBar
-        progress={progress}
-        isWaving={isWaving}
-        tiltAngle={tiltAngle}
-        flaskWidth={flaskWidth}
-        flaskHeight={flaskHeight}
-        className="h-full w-full"
-      />
-    </div>
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-40 select-none">
+        <h1 className="text-[14vw] font-black text-white mix-blend-overlay leading-none tracking-tighter">WATER</h1>
+        <h1 className="text-[14vw] font-black text-white mix-blend-overlay leading-none tracking-tighter">SHADER</h1>
+      </div>
+
+      <div
+        className="absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2 rounded-[60px] transition-all duration-300"
+        style={{
+          width: `${(flaskWidth + 6) * 35}px`,
+          height: `${(flaskHeight + 6) * 35}px`,
+          backdropFilter: 'url(#glass-refraction) blur(4px)',
+          WebkitBackdropFilter: 'url(#glass-refraction) blur(4px)',
+        }}
+      >
+        <RealisticProgressBar
+          progress={progress}
+          isWaving={isWaving}
+          tiltAngle={tiltAngle}
+          flaskWidth={flaskWidth}
+          flaskHeight={flaskHeight}
+          className="h-full w-full"
+        />
+      </div>
 
     {/* 2. Слой интерфейса — только маленькая плашка внизу */}
     <div className="absolute bottom-6 left-1/2 z-20 w-[90%] max-w-md -translate-x-1/2">
