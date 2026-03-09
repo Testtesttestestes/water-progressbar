@@ -31,7 +31,6 @@ export default function App() {
       left,
       position: 'absolute',
       meshQuality,
-      borderRadius: '999px',
       wrapperClassName: 'shadow-[0_10px_30px_rgba(0,0,0,0.35)]',
     }),
     [height, isWaving, left, meshQuality, progress, tiltAngleDeg, top, width],

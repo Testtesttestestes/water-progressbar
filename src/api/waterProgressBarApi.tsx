@@ -17,7 +17,6 @@ export type WaterProgressBarOptions = {
   zIndex?: number;
   wrapperClassName?: string;
   canvasClassName?: string;
-  borderRadius?: string;
 };
 
 const DEFAULT_OPTIONS: Required<
@@ -31,7 +30,6 @@ const DEFAULT_OPTIONS: Required<
   height: '140px',
   position: 'relative',
   zIndex: 1,
-  borderRadius: '999px',
 };
 
 const clampProgress = (value: number) => {
@@ -59,8 +57,8 @@ const renderBar = (root: Root, wrapper: HTMLDivElement, options: WaterProgressBa
   wrapper.style.bottom = options.bottom ?? '';
   wrapper.style.left = options.left ?? '';
   wrapper.style.zIndex = String(options.zIndex ?? DEFAULT_OPTIONS.zIndex);
-  wrapper.style.overflow = 'hidden';
-  wrapper.style.borderRadius = options.borderRadius ?? DEFAULT_OPTIONS.borderRadius;
+  wrapper.style.overflow = 'visible';
+  wrapper.style.background = 'transparent';
   wrapper.className = options.wrapperClassName ?? '';
 
   root.render(
