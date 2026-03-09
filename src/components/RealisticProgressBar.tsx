@@ -7,6 +7,7 @@ import * as SPH from '../sph/sph.js';
 interface RealisticProgressBarProps {
   progress: number; // от 0.0 до 1.0
   isWaving?: boolean;
+  tiltAngle?: number;
   className?: string;
   meshQuality?: 'high' | 'balanced' | 'low';
 }
@@ -32,7 +33,8 @@ const FLASK_MOTION = {
 
 const getContainerPose = (time: number, waveAmplitude: number) => {
   const offsetX = Math.sin(time * FLASK_MOTION.offsetXFreq) * FLASK_MOTION.offsetXAmp * waveAmplitude;
-  const angle = Math.sin(time * FLASK_MOTION.angleFreq) * FLASK_MOTION.angleAmp * waveAmplitude;
+  const dynamicAngle = Math.sin(time * FLASK_MOTION.angleFreq) * FLASK_MOTION.angleAmp * waveAmplitude;
+  const angle = dynamicAngle;
   return { position: new Vec2(offsetX, 3.0), angle };
 };
 
@@ -45,6 +47,7 @@ const MESH_QUALITY_FACTORS: Record<NonNullable<RealisticProgressBarProps['meshQu
 export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   progress,
   isWaving = false,
+  tiltAngle = 0,
   className,
   meshQuality = 'balanced',
 }) => {
@@ -53,6 +56,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   const isWavingRef = useRef(isWaving);
   const waveAmplitudeRef = useRef(0.0);
   const timeRef = useRef(0.0);
+  const tiltAngleRef = useRef(tiltAngle);
   const kinematicPrevRef = useRef<KinematicSample | null>(null);
   const reverseImpulseRef = useRef({ strength: 0.0, age: 1e6, deltaV: new Vec2(0, 0) });
 
@@ -64,6 +68,10 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   useEffect(() => {
     isWavingRef.current = isWaving;
   }, [isWaving]);
+
+  useEffect(() => {
+    tiltAngleRef.current = tiltAngle;
+  }, [tiltAngle]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -170,6 +178,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
 
             const safeDt = Math.max(dt, 1e-4);
             const pose = getContainerPose(timeRef.current, waveAmplitudeRef.current);
+            pose.angle += tiltAngleRef.current;
             const prev = kinematicPrevRef.current;
 
             let velocity = new Vec2(0, 0);
@@ -222,7 +231,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
               reverseImpulseAge: reverseImpulseRef.current.age,
               reverseDeltaV: reverseImpulseRef.current.deltaV,
             });
-            Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
+            Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current, pose.position, pose.angle);
 
             for (let i = 0; i < 8; i++) SPH.step();
 

@@ -147,16 +147,14 @@ vec2 calcAcceleration() {
     float angle = u_container_angle;
 
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    vec2 p = pos_i - u_container_pos;
-    p = rot * p;
+    mat2 invRot = transpose(rot);
+    vec2 p = invRot * (pos_i - u_container_pos);
 
     float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
-    vec2 posDir = calcRoundedBoxNormal(p, boxSize, boxRadius);
-    posDir = vec2(cos(-angle) * posDir.x - sin(-angle) * posDir.y, sin(-angle) * posDir.x + cos(-angle) * posDir.y);
+    vec2 normalLocal = calcRoundedBoxNormal(p, boxSize, boxRadius);
+    vec2 posDir = rot * normalLocal;
     if (dist_iw < kernelRadius) {
         vec2  accWKer = texture(accWallKerTex, vec2(dist_iw * rcplKernelRadius, 0.5)).xy;
-        // Transform normal back to world space
-        posDir = vec2(cos(-angle) * posDir.x - sin(-angle) * posDir.y, sin(-angle) * posDir.x + cos(-angle) * posDir.y);
         
         float pres  = max((pr_i.x + rho0 * dot(g, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
         float repul = wallRepulsionScale * coefRepul * clamp(dp - dist_iw, 0.0, 0.5 * dp);
@@ -233,17 +231,15 @@ void main(void) {
     float boxRadius = 0.8;
     float angle = u_container_angle;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    vec2 pLocal = rot * (pos - u_container_pos);
+    mat2 invRot = transpose(rot);
+    vec2 pLocal = invRot * (pos - u_container_pos);
     float dist_iw = -sdRoundedBox(pLocal, boxSize, boxRadius) + 0.5 * dp;
     vec2 normalLocal = calcRoundedBoxNormal(pLocal, boxSize, boxRadius);
-    vec2 wallNormal = vec2(
-        cos(-angle) * normalLocal.x - sin(-angle) * normalLocal.y,
-        sin(-angle) * normalLocal.x + cos(-angle) * normalLocal.y
-    );
+    vec2 wallNormal = rot * normalLocal;
 
     if (dist_iw < dp) {
-        vec2 r_local = pos - u_container_pos;
-        vec2 wallVel = u_container_vel + vec2(-r_local.y, r_local.x) * u_container_ang_vel;
+        vec2 r_world = pos - u_container_pos;
+        vec2 wallVel = u_container_vel + vec2(-r_world.y, r_world.x) * u_container_ang_vel;
         vec2 relVel = velh - wallVel;
         float relVN = dot(relVel, wallNormal);
         vec2 relVT = relVel - relVN * wallNormal;

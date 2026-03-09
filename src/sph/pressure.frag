@@ -84,8 +84,8 @@ void main(void) {
     float angle = u_container_angle;
 
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    vec2 p = pos_i - u_container_pos;
-    p = rot * p;
+    mat2 invRot = transpose(rot);
+    vec2 p = invRot * (pos_i - u_container_pos);
 
     float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
     float u_w = dist_iw * rcplKernelRadius;
