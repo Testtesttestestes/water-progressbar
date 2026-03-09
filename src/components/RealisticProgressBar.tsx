@@ -28,12 +28,6 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   const isWavingRef = useRef(isWaving);
   const waveAmplitudeRef = useRef(0.0);
   const timeRef = useRef(0.0);
-  const prevContainerPosRef = useRef(new Vec2(0.0, 3.0));
-  const prevContainerVelRef = useRef(new Vec2(0.0, 0.0));
-  const prevAngleRef = useRef(0.0);
-  const prevAngularVelRef = useRef(0.0);
-  const prevVelSignRef = useRef(0);
-  const reverseImpulseRef = useRef(0.0);
 
   useEffect(() => {
     progressRef.current = progress;
@@ -131,7 +125,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
 
         const loop = (currentTime: number) => {
-            const dt = Math.max((currentTime - lastTime) / 1000, 1e-4);
+            const dt = (currentTime - lastTime) / 1000;
             lastTime = currentTime;
 
             // Resize canvas to match display size with device pixel ratio
@@ -146,42 +140,6 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
             const targetAmplitude = isWavingRef.current ? 1.0 : 0.0;
             waveAmplitudeRef.current += (targetAmplitude - waveAmplitudeRef.current) * 0.05;
             timeRef.current += dt;
-
-            const amplitude = waveAmplitudeRef.current;
-            const t = timeRef.current;
-            const angle = Math.sin(t * 1.2) * 0.15 * amplitude;
-            const offsetX = Math.sin(t * 0.8) * 1.0 * amplitude;
-            const containerPos = new Vec2(offsetX, 3.0);
-
-            const containerVel = Vec2.mul(1 / dt, Vec2.sub(containerPos, prevContainerPosRef.current));
-            const containerAcc = Vec2.mul(1 / dt, Vec2.sub(containerVel, prevContainerVelRef.current));
-            const angularVel = (angle - prevAngleRef.current) / dt;
-            const angularAcc = (angularVel - prevAngularVelRef.current) / dt;
-
-            const currentVelSign = Math.sign(containerVel.x);
-            const previousVelSign = prevVelSignRef.current;
-            if (currentVelSign !== 0 && previousVelSign !== 0 && currentVelSign !== previousVelSign) {
-              const deltaV = Math.abs(containerVel.x - prevContainerVelRef.current.x);
-              reverseImpulseRef.current = Math.max(reverseImpulseRef.current, deltaV * 1.5);
-            }
-            if (currentVelSign !== 0) prevVelSignRef.current = currentVelSign;
-
-            reverseImpulseRef.current *= Math.exp(-dt * 16.0);
-
-            SPH.setContainerKinematics({
-              position: containerPos,
-              velocity: containerVel,
-              acceleration: containerAcc,
-              angle,
-              angularVelocity: angularVel,
-              angularAcceleration: angularAcc,
-              reverseImpulse: reverseImpulseRef.current,
-            });
-
-            prevContainerPosRef.current = containerPos;
-            prevContainerVelRef.current = containerVel;
-            prevAngleRef.current = angle;
-            prevAngularVelRef.current = angularVel;
 
             SPH.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
             Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
