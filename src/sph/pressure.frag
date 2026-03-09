@@ -94,7 +94,12 @@ void main(void) {
 
     rho_i *= coefDensity;
     float relrho_i = rho_i * rcplRho0;
-    float pres_i = max(pressB * (relrho_i * relrho_i - 1.0), 0.0);
+    float eosTerm = relrho_i * relrho_i - 1.0;
+    float negBand = 0.05;
+    float softBand = smoothstep(-negBand, 0.0, eosTerm);
+    float negClamp = clamp(eosTerm, -negBand, 0.0);
+    float blendedEos = mix(0.35 * negClamp, eosTerm, softBand);
+    float pres_i = pressB * blendedEos;
 
     o = vec4(texture(velTex, uv_i).xy, pres_i, 1./rho_i);
 }

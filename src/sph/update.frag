@@ -122,7 +122,7 @@ vec2 calcAcceleration() {
 
             // 表面張力
             float st = kernelRadiusSq - r_sq;
-            st = st * st * st * coefSurfTension * step(0.9 * dp, r);
+            st = st * st * st * coefSurfTension * step(0.8 * dp, r);
             acc_i -= st * pos_ij;
 
             vec2 vel_ij = vel_i - vpr_j.xy;
@@ -132,10 +132,13 @@ vec2 calcAcceleration() {
             ker = ker * ker * ker;
 
             // 粘性項
-            acc_i += (coefViscosity * prr_ij.y * ker) * vel_ij;
+            float viscBoost = mix(1.3, 1.0, smoothstep(0.0, 0.08, prr_ij.x * rcplRho0));
+            acc_i += (coefViscosity * viscBoost * prr_ij.y * ker) * vel_ij;
 
             // 圧力項と人工斥力
             float pres_ij  = -prr_ij.x * prr_ij.y;
+            if (prr_ij.x < 0.0)
+                pres_ij *= 0.55;
             float repul_ij = coefRepul * rr * max(0.98 * dp - r, 0.0);
             acc_i += (pres_ij * ker + repul_ij) * pos_ij;
         }
@@ -168,7 +171,7 @@ vec2 calcAcceleration() {
         vec2 relT    = relVel - relN * posDir;
 
         vec2 viscWall = (-wallNormalViscScale * relN * posDir - wallTangentialViscScale * relT)
-                      * coefViscosity * pr_i.y * rcplRho0 * accWKer.y;
+                      * (1.25 * coefViscosity) * pr_i.y * rcplRho0 * accWKer.y;
         acc_i += (pres * accWKer.x - repul) * posDir + viscWall;
     }
 

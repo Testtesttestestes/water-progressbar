@@ -27,8 +27,24 @@ let _gl;
 
 const _gravity       = new Vec2(0, -10);
 const _rho0          = 1000; //1000だと圧力が半精度では表現できなくなるので適当な値にする
-const _viscosity     = 0.1 * _rho0;
-const _surfTension   = 2;
+const _parameterModes = {
+    arcade: {
+        speedSoundFactor: 2.8,
+        pressBScale: 0.85,
+        viscosityScale: 1.4,
+        surfaceTensionScale: 1.5,
+        repulsionScale: 1.15,
+    },
+    physical: {
+        speedSoundFactor: 3.8,
+        pressBScale: 1.2,
+        viscosityScale: 2.1,
+        surfaceTensionScale: 2.2,
+        repulsionScale: 1.35,
+    }
+};
+const _baseViscosity = 0.1 * _rho0;
+const _baseSurfTension = 2;
 
 const _vertSources = [
     initparticlesVert,
@@ -75,6 +91,8 @@ let _kernelRadius;
 let _dp;
 let _dt;
 let _updateStaticParams;
+let _densityParams;
+let _activeParamMode = 'arcade';
 
 let _particleCount;
 
@@ -195,15 +213,32 @@ export const setContainerKinematics = (kinematics) => {
     };
 };
 
+
+export const setParameterMode = (mode) => {
+    if (!(mode in _parameterModes)) {
+        console.warn(`Unknown SPH mode '${mode}'. Available modes: ${Object.keys(_parameterModes).join(', ')}`);
+        return;
+    }
+    if (_activeParamMode === mode)
+        return;
+
+    _activeParamMode = mode;
+    if (!_gl)
+        return;
+
+    _initParams();
+};
+
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 const _bindUpdateUBO = () => {
+    const mode = _parameterModes[_activeParamMode];
     GLU.bindUBO(_gl, uniformBlockBindingTable.Update, [
         _updateStaticParams.effectiveParticleMaxUV.x, _updateStaticParams.effectiveParticleMaxUV.y,
         _dp,
         _rho0, 1 / _rho0,
         _kernelRadius, _kernelRadius**2, 1 / _kernelRadius,
-        _viscosity,
+        _baseViscosity * mode.viscosityScale,
         _updateStaticParams.surfaceTensionCoef,
         _updateStaticParams.accelerationCoef,
         _updateStaticParams.repulsionCoef,
@@ -227,9 +262,10 @@ const _initParams = () => {
     let h          = 1.02 * _dp;
     _kernelRadius  = 2*h;
     let velLimit   = Math.sqrt(2 * Vec2.length(_gravity) * _fluidDomainRadius);
-    let speedSound = 3 * velLimit;
+    let mode = _parameterModes[_activeParamMode];
+    let speedSound = mode.speedSoundFactor * velLimit;
     _dt            = 0.45 * h / velLimit;
-    let pressB     = _rho0 * speedSound * speedSound / 2;
+    let pressB     = (_rho0 * speedSound * speedSound / 2) * mode.pressBScale;
     let poly6KernelAlpha = (() => {
         let sum = 0;
         for (let r of _helper.sampleParticles5x5(_dp))
@@ -264,19 +300,24 @@ const _initParams = () => {
     GLU.bindUBO(_gl, uniformBlockBindingTable.Cell,            [_cellResolution.x, _cellResolution.y, cellOrigin.x, cellOrigin.y, 1/cellSize]);
     GLU.bindUBO(_gl, uniformBlockBindingTable.Subcell,         [_subcellResolution.x, _subcellResolution.y, subcellOrigin.x, subcellOrigin.y, 1/subcellSize.x, 1/subcellSize.y]);
     GLU.bindUBO(_gl, uniformBlockBindingTable.SPHVertexShader, [0.5 * particleTexelSize.x, 0.5 * particleTexelSize.y, 1, effectiveParticleMaxUV.y + particleTexelSize.y]);
+    _densityParams = {
+        effectiveParticleMaxUV,
+        massDensityCoef: mass * poly6KernelAlpha,
+        pressB,
+    };
     GLU.bindUBO(_gl, uniformBlockBindingTable.Density, [
-        effectiveParticleMaxUV.x, effectiveParticleMaxUV.y, 
-        _dp, 
-        1/_rho0, 
-        _kernelRadius, _kernelRadius**2, 1/_kernelRadius, 
-        mass * poly6KernelAlpha, 
-        pressB, 
+        _densityParams.effectiveParticleMaxUV.x, _densityParams.effectiveParticleMaxUV.y,
+        _dp,
+        1/_rho0,
+        _kernelRadius, _kernelRadius**2, 1/_kernelRadius,
+        _densityParams.massDensityCoef,
+        _densityParams.pressB,
         _fluidDomainRadius]);
     _updateStaticParams = {
         effectiveParticleMaxUV,
-        surfaceTensionCoef: _surfTension * poly6KernelAlpha / (mass * gradWendlandKernelAlpha),
+        surfaceTensionCoef: (_baseSurfTension * mode.surfaceTensionScale) * poly6KernelAlpha / (mass * gradWendlandKernelAlpha),
         accelerationCoef: mass * gradWendlandKernelAlpha,
-        repulsionCoef: 0.01 / (mass * gradWendlandKernelAlpha * _dt**2),
+        repulsionCoef: (0.01 * mode.repulsionScale) / (mass * gradWendlandKernelAlpha * _dt**2),
         velLimit
     };
     _bindUpdateUBO();
