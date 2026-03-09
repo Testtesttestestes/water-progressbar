@@ -193,7 +193,8 @@ export const visualize = (callback) => {
             _particleTextureResolution, 
             _posVelReadFBO.texture('intPos'), 
             _posVelReadFBO.texture('vel'), 
-            _cellBeginEndFBO.texture('cellBeginEnd')
+            _cellBeginEndFBO.texture('cellBeginEnd'),
+            _posVelReadFBO.texture('state')
     );
 };
 
@@ -358,6 +359,8 @@ const _createMainFBOs = () => {
 const _initPosVelTex = (particleVBOs) => {
     let prg = _createProgram(0, 0, [0, 1, 2], [2, 2, 2], ['ParticleTexture', 'ToIntPos']);
     prg.use();
+    _gl.uniform1f(prg.uniform('u_progress'), _progress);
+    _gl.uniform1f(prg.uniform('particleCount'), _particleCount);
     GLU.setAttributes(_gl, particleVBOs, prg.location, prg.stride);
 
     _posVelReadFBO.bind();

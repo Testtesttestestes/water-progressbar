@@ -212,7 +212,7 @@ void main(void) {
     float targetActive = step(particleIndex, activeCount - 1.0);
     float activationRate = 3.0;
     float massBlend = clamp(state.y + (targetActive - state.y) * dt * activationRate, 0.0, 1.0);
-    float active = step(1e-3, massBlend);
+    float isActive = step(1e-3, massBlend);
 
     vec2 acc  = calcAcceleration();
 
@@ -226,7 +226,7 @@ void main(void) {
 
     // leap-frog
     vec2 vel;
-    velh += dt * acc * active;
+    velh += dt * acc * isActive;
 
     vec2 boxSize = vec2(5.0, 1.5);
     float boxRadius = 0.8;
@@ -259,19 +259,26 @@ void main(void) {
         velh = wallVel + relVN * wallNormal + relVT;
     }
 
-    vel   = velh + 0.5 * dt * acc * active;
+    vel   = velh + 0.5 * dt * acc * isActive;
     if (dot(velh, velh) > velLimit * velLimit)
         velh = velLimit * normalize(velh);
     if (dot(vel, vel) > velLimit * velLimit)
         vel  = velLimit * normalize(vel);
-    pos += dt * velh * active;
+    
+    if (isActive < 0.5) {
+        pos = vec2(domainRadius * 2.0);
+        velh = vec2(0.0);
+        vel = vec2(0.0);
+    } else {
+        pos += dt * velh;
+    }
 
-    float damping = mix(0.97, 1.0, active);
+    float damping = mix(0.97, 1.0, isActive);
     velh *= damping;
     vel *= damping;
 
     oPos    = vec4(pos, velh);
     oVel    = vel;
     oIntPos = ivec2(round(pos * toIntPos));
-    oState  = vec2(active, massBlend);
+    oState  = vec2(isActive, massBlend);
 }

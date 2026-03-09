@@ -21,6 +21,7 @@ layout(std140) uniform MarchingSquares {
 uniform float smoothRadius;
 uniform isampler2D intPosTex;
 uniform usampler2D cellBeginEndTex;
+uniform sampler2D stateTex;
 
 out vec4 o;
 
@@ -57,11 +58,15 @@ void main(void) {
             vec2  pos_ij = pos_i - vec2(texture(intPosTex, uv_j).xy) * toFloatPos;
             float r_sq   = dot(pos_ij, pos_ij);
             float neigh  = step(r_sq, R_sq);
-            float w = (R_sq - r_sq) * neigh;
+            
+            vec2 state_j = texture(stateTex, uv_j).xy;
+            float mass_j = state_j.x * state_j.y;
+            
+            float w = (R_sq - r_sq) * neigh * mass_j;
             w = w * w * w;
-            wx_i += vec4(w, w, w, neigh) * vec4(pos_ij, 1, 1);
+            wx_i += vec4(w, w, w, neigh * mass_j) * vec4(pos_ij, 1, 1);
         }
     }
 
-    o = vec4((wx_i.w > 0.0 ? (pos_i - wx_i.xy/wx_i.z) : pos_i), wx_i.w, 0);
+    o = vec4((wx_i.w > 0.01 ? (pos_i - wx_i.xy/wx_i.z) : pos_i), wx_i.w, 0);
 }

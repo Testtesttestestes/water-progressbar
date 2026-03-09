@@ -9,6 +9,7 @@ uniform vec4 moveScale;
 uniform float particleRadius;
 uniform isampler2D intPosTex;
 uniform sampler2D velTex;
+uniform sampler2D stateTex;
 
 out vec4 vOut;
 
@@ -22,6 +23,13 @@ void main(void) {
 
     float t   = float(gl_InstanceID) * particleTexelSizeOffset.x;
     vec2  uv  = vec2(fract(t), floor(t) * particleTexelSizeOffset.y) + particleTexelSizeOffset.zw;
+    
+    vec2 state = texture(stateTex, uv).xy;
+    if (state.x < 0.5) {
+        gl_Position = vec4(2.0, 2.0, 0.0, 1.0); // Outside clip space
+        return;
+    }
+
     vec2  pos = vec2(texture(intPosTex, uv).xy) * toFloatPos; 
     pos += particleRadius * (vertPos[gl_VertexID & 3]);
     gl_Position = vec4(moveScale.zw * pos + moveScale.xy, 0, 1);
