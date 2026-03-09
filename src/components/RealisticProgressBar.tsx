@@ -114,9 +114,10 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({ prog
             const dt = (currentTime - lastTime) / 1000;
             lastTime = currentTime;
 
-            // Resize canvas to match display size
-            const displayWidth = canvas.clientWidth;
-            const displayHeight = canvas.clientHeight;
+            // Resize canvas to match display size with device pixel ratio
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const displayWidth = Math.floor(canvas.clientWidth * dpr);
+            const displayHeight = Math.floor(canvas.clientHeight * dpr);
             if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
                 canvas.width = displayWidth;
                 canvas.height = displayHeight;
