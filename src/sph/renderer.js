@@ -56,6 +56,7 @@ let _bgTex;
 let _resolution;
 let _cellSize;
 let _cellOrigin; 
+let _meshSizeQualityFactor = 1.0;
 
 let _renderingArea = { min: Vec2.zero(), max: new Vec2(1) };
 
@@ -68,10 +69,11 @@ export const loadShaderFilesAsync = async () => {
     // Shaders are imported synchronously via Vite ?raw
 };
 
-export const init = (gl, canvas, meshSize, meshingAreaMin, meshingAreaMax) => {
+export const init = (gl, canvas, meshSize, meshingAreaMin, meshingAreaMax, { meshSizeQualityFactor = 1.0 } = {}) => {
     _gl         = gl;
     _canvas     = canvas;
-    _cellSize   = meshSize;
+    _meshSizeQualityFactor = Math.max(meshSizeQualityFactor, 1.0);
+    _cellSize   = meshSize / _meshSizeQualityFactor;
     _cellOrigin = meshingAreaMin;
     _resolution = (() => {
         let n = Vec2.div(Vec2.sub(meshingAreaMax, meshingAreaMin), _cellSize);
