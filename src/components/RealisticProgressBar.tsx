@@ -11,6 +11,31 @@ interface RealisticProgressBarProps {
   meshQuality?: 'high' | 'balanced' | 'low';
 }
 
+
+
+type KinematicSample = {
+  time: number;
+  pos: Vec2;
+  vel: Vec2;
+  acc: Vec2;
+  angle: number;
+  angVel: number;
+  angAcc: number;
+};
+
+const FLASK_MOTION = {
+  offsetXAmp: 1.0,
+  offsetXFreq: 0.8,
+  angleAmp: 0.15,
+  angleFreq: 1.2,
+};
+
+const getContainerPose = (time: number, waveAmplitude: number) => {
+  const offsetX = Math.sin(time * FLASK_MOTION.offsetXFreq) * FLASK_MOTION.offsetXAmp * waveAmplitude;
+  const angle = Math.sin(time * FLASK_MOTION.angleFreq) * FLASK_MOTION.angleAmp * waveAmplitude;
+  return { position: new Vec2(offsetX, 3.0), angle };
+};
+
 const MESH_QUALITY_FACTORS: Record<NonNullable<RealisticProgressBarProps['meshQuality']>, number> = {
   high: 4,
   balanced: 2,
@@ -28,6 +53,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   const isWavingRef = useRef(isWaving);
   const waveAmplitudeRef = useRef(0.0);
   const timeRef = useRef(0.0);
+  const kinematicPrevRef = useRef<KinematicSample | null>(null);
+  const reverseImpulseRef = useRef({ strength: 0.0, age: 1e6, deltaV: new Vec2(0, 0) });
 
   useEffect(() => {
     progressRef.current = progress;
@@ -141,7 +168,60 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
             waveAmplitudeRef.current += (targetAmplitude - waveAmplitudeRef.current) * 0.05;
             timeRef.current += dt;
 
+            const safeDt = Math.max(dt, 1e-4);
+            const pose = getContainerPose(timeRef.current, waveAmplitudeRef.current);
+            const prev = kinematicPrevRef.current;
+
+            let velocity = new Vec2(0, 0);
+            let acceleration = new Vec2(0, 0);
+            let angularVelocity = 0.0;
+            let angularAcceleration = 0.0;
+
+            if (prev) {
+              velocity = Vec2.mul(1 / safeDt, Vec2.sub(pose.position, prev.pos));
+              angularVelocity = (pose.angle - prev.angle) / safeDt;
+
+              acceleration = Vec2.mul(1 / safeDt, Vec2.sub(velocity, prev.vel));
+              angularAcceleration = (angularVelocity - prev.angVel) / safeDt;
+
+              const speedSignPrev = Math.sign(prev.vel.x);
+              const speedSignCurr = Math.sign(velocity.x);
+              const hasReverse = speedSignPrev !== 0 && speedSignCurr !== 0 && speedSignPrev !== speedSignCurr;
+              if (hasReverse) {
+                const deltaV = Vec2.sub(velocity, prev.vel);
+                reverseImpulseRef.current = {
+                  strength: Vec2.length(deltaV),
+                  age: 0.0,
+                  deltaV,
+                };
+              }
+            }
+
+            reverseImpulseRef.current.age += safeDt;
+
+            const sample: KinematicSample = {
+              time: timeRef.current,
+              pos: pose.position,
+              vel: velocity,
+              acc: acceleration,
+              angle: pose.angle,
+              angVel: angularVelocity,
+              angAcc: angularAcceleration,
+            };
+            kinematicPrevRef.current = sample;
+
             SPH.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
+            SPH.setContainerKinematics({
+              position: pose.position,
+              velocity,
+              acceleration,
+              angle: pose.angle,
+              angularVelocity,
+              angularAcceleration,
+              reverseImpulseStrength: reverseImpulseRef.current.strength,
+              reverseImpulseAge: reverseImpulseRef.current.age,
+              reverseDeltaV: reverseImpulseRef.current.deltaV,
+            });
             Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
 
             for (let i = 0; i < 8; i++) SPH.step();

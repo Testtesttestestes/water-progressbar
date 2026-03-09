@@ -37,6 +37,15 @@ uniform float u_progress;
 uniform float particleCount;
 uniform float u_time;
 uniform float u_wave_amplitude;
+uniform vec2 u_container_pos;
+uniform vec2 u_container_vel;
+uniform vec2 u_container_acc;
+uniform float u_container_angle;
+uniform float u_container_ang_vel;
+uniform float u_container_ang_acc;
+uniform float u_reverse_impulse_strength;
+uniform float u_reverse_impulse_age;
+uniform vec2 u_reverse_delta_v;
 uniform sampler2D  posTex;
 uniform isampler2D intPosTex;
 uniform sampler2D  velTex;
@@ -129,20 +138,17 @@ vec2 calcAcceleration() {
     vec2 boxSize = vec2(5.0, 1.5);
     float boxRadius = 0.8;
     
-    // Apply animation (must match ms.frag)
-    float angle = sin(u_time * 1.2) * 0.15 * u_wave_amplitude;
-    float offsetX = sin(u_time * 0.8) * 1.0 * u_wave_amplitude;
-    
+    float angle = u_container_angle;
+
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-    vec2 p = pos_i;
-    p.y -= 3.0; // Offset up
-    p.x -= offsetX;
+    vec2 p = pos_i - u_container_pos;
     p = rot * p;
 
     float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
+    vec2 posDir = calcRoundedBoxNormal(p, boxSize, boxRadius);
+    posDir = vec2(cos(-angle) * posDir.x - sin(-angle) * posDir.y, sin(-angle) * posDir.x + cos(-angle) * posDir.y);
     if (dist_iw < kernelRadius) {
         vec2  accWKer = texture(accWallKerTex, vec2(dist_iw * rcplKernelRadius, 0.5)).xy;
-        vec2  posDir  = calcRoundedBoxNormal(p, boxSize, boxRadius);
         // Transform normal back to world space
         posDir = vec2(cos(-angle) * posDir.x - sin(-angle) * posDir.y, sin(-angle) * posDir.x + cos(-angle) * posDir.y);
         
@@ -151,8 +157,23 @@ vec2 calcAcceleration() {
         acc_i += (pres * accWKer.x - repul) * posDir + 0.2 * coefViscosity * vel_i * pr_i.y * rcplRho0 * accWKer.y;
     }
 
+    vec2 r_world = pos_i - u_container_pos;
+    vec2 tangential = vec2(-r_world.y, r_world.x) * u_container_ang_acc;
+    vec2 centripetal = -u_container_ang_vel * u_container_ang_vel * r_world;
+    vec2 a_container = u_container_acc + tangential + centripetal;
+
     acc_i *= coefAcceleration;
-    acc_i += g;
+    acc_i += g - a_container;
+
+    float impulseDecay = exp(-u_reverse_impulse_age * 30.0);
+    vec2 deltaDir = normalize(u_reverse_delta_v + vec2(1e-5, 0.0));
+    float endBlend = smoothstep(3.0, 5.0, abs(p.x));
+    float edgeWeight = endBlend * exp(-abs(dist_iw) * 6.0);
+    float normalAlign = max(dot(posDir, -deltaDir), 0.0);
+    float impulse = u_reverse_impulse_strength * impulseDecay * edgeWeight * normalAlign;
+    if (u_reverse_impulse_strength > 0.0 && dist_iw < kernelRadius) {
+        acc_i += posDir * impulse;
+    }
 
     return acc_i;
 }
