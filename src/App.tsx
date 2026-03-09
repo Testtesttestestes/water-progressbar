@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { RealisticProgressBar } from './components/RealisticProgressBar';
+import { GlassEffect } from '@liquid-svg-glass/react';
 
 export default function App() {
   const [progress, setProgress] = useState(0.5);
@@ -15,44 +16,28 @@ export default function App() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-gradient-to-br from-indigo-950 via-purple-900 to-black">
-      <svg className="hidden" aria-hidden="true">
-        <defs>
-          <filter id="glass-refraction" x="-20%" y="-20%" width="140%" height="140%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" result="noise" />
-            <feGaussianBlur in="noise" stdDeviation="2" result="smoothedNoise" />
-            <feDisplacementMap
-              in="SourceGraphic"
-              in2="smoothedNoise"
-              scale="15"
-              xChannelSelector="R"
-              yChannelSelector="G"
-            />
-          </filter>
-        </defs>
-      </svg>
-
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-40 select-none">
         <h1 className="text-[14vw] font-black text-white mix-blend-overlay leading-none tracking-tighter">WATER</h1>
         <h1 className="text-[14vw] font-black text-white mix-blend-overlay leading-none tracking-tighter">SHADER</h1>
       </div>
 
       <div
-        className="absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2 rounded-[60px] transition-all duration-300"
+        className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 transition-all duration-300"
         style={{
           width: `${(flaskWidth + 6) * 35}px`,
           height: `${(flaskHeight + 6) * 35}px`,
-          backdropFilter: 'url(#glass-refraction) blur(4px)',
-          WebkitBackdropFilter: 'url(#glass-refraction) blur(4px)',
         }}
       >
-        <RealisticProgressBar
-          progress={progress}
-          isWaving={isWaving}
-          tiltAngle={tiltAngle}
-          flaskWidth={flaskWidth}
-          flaskHeight={flaskHeight}
-          className="h-full w-full"
-        />
+        <GlassEffect preset="dock" draggable className="h-full w-full">
+          <RealisticProgressBar
+            progress={progress}
+            isWaving={isWaving}
+            tiltAngle={tiltAngle}
+            flaskWidth={flaskWidth}
+            flaskHeight={flaskHeight}
+            className="h-full w-full"
+          />
+        </GlassEffect>
       </div>
 
     {/* 2. Слой интерфейса — только маленькая плашка внизу */}
