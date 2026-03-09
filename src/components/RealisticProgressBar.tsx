@@ -57,6 +57,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   const waveAmplitudeRef = useRef(0.0);
   const timeRef = useRef(0.0);
   const tiltAngleRef = useRef(tiltAngle);
+  const smoothedTiltAngleRef = useRef(tiltAngle);
   const kinematicPrevRef = useRef<KinematicSample | null>(null);
   const reverseImpulseRef = useRef({ strength: 0.0, age: 1e6, deltaV: new Vec2(0, 0) });
 
@@ -176,9 +177,13 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
             waveAmplitudeRef.current += (targetAmplitude - waveAmplitudeRef.current) * 0.05;
             timeRef.current += dt;
 
+            const tiltSmoothingTime = 0.18;
+            const tiltLerp = 1.0 - Math.exp(-Math.max(dt, 0) / tiltSmoothingTime);
+            smoothedTiltAngleRef.current += (tiltAngleRef.current - smoothedTiltAngleRef.current) * tiltLerp;
+
             const safeDt = Math.max(dt, 1e-4);
             const pose = getContainerPose(timeRef.current, waveAmplitudeRef.current);
-            pose.angle += tiltAngleRef.current;
+            pose.angle += smoothedTiltAngleRef.current;
             const prev = kinematicPrevRef.current;
 
             let velocity = new Vec2(0, 0);
