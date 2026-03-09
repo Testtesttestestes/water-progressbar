@@ -25,7 +25,7 @@ import sortparticlesFrag from './sortparticles.frag?raw';
 
 let _gl;
 
-const _gravity       = new Vec2(0, -10);
+const _gravity       = new Vec2(-10, 0);
 const _rho0          = 1000; //1000だと圧力が半精度では表現できなくなるので適当な値にする
 const _viscosity     = 0.18 * _rho0;
 const _surfTension   = 2;
