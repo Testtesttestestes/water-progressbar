@@ -217,10 +217,10 @@ void main(void) {
     float particleIndex = floor(gl_FragCoord.y) * round(1.0 / particleTexelSizeOffset.x) + floor(gl_FragCoord.x);
     float activeCount = u_progress * particleCount;
     float targetActive = step(particleIndex, activeCount - 1.0);
-    float activationRate = 0.9;
+    float activationRate = 3.0;
     float massBlend = clamp(state.y + (targetActive - state.y) * dt * activationRate, 0.0, 1.0);
     float isActive = step(1e-3, massBlend);
-    float justActivated = step(0.5, targetActive) * (1.0 - step(1e-3, state.y));
+    float justActivated = step(0.5, targetActive) * (1.0 - step(0.5, state.x));
 
     vec2 acc  = calcAcceleration();
     if (justActivated > 0.5)
