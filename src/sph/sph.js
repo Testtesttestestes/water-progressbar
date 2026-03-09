@@ -397,4 +397,3 @@ const _sortParticles = () => {
 
     [_posVelReadFBO, _posVelWriteFBO] = [_posVelWriteFBO, _posVelReadFBO];
 };
-

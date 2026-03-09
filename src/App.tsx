@@ -11,23 +11,29 @@ export default function App() {
   const [isWaving, setIsWaving] = useState(false);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8">
+  <div className="relative h-screen w-full overflow-hidden bg-gray-900">
+    {/* 1. Слой с водой (Канвас) — занимает весь экран на заднем плане */}
+    <div className="absolute inset-0 z-0">
       <RealisticProgressBar progress={progress} isWaving={isWaving} />
-      
-      <div className="w-full max-w-2xl space-y-8 bg-black/20 backdrop-blur-md p-8 rounded-3xl border border-white/10 shadow-2xl relative z-10">
-        <div className="text-center space-y-3">
-          <h1 className="text-3xl font-medium text-white tracking-tight">Realistic Water Shader</h1>
-          <p className="text-white/60">WebGL SPH Simulation</p>
+    </div>
+
+    {/* 2. Слой интерфейса — только маленькая плашка внизу */}
+    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-10">
+      <div className="bg-black/40 backdrop-blur-md p-5 rounded-3xl border border-white/10 shadow-2xl">
+        
+        {/* Заголовок и описание в одну строку для экономии места */}
+        <div className="flex justify-between items-end mb-4">
+          <div>
+            <h1 className="text-lg font-medium text-white leading-none">Water Shader</h1>
+            <p className="text-[10px] text-white/50 mt-1 uppercase tracking-wider">WebGL SPH</p>
+          </div>
+          <div className="text-sm font-mono text-white/80">
+            {Math.round(progress * 100)}%
+          </div>
         </div>
 
-        <div className="h-28" /> {/* Spacer for the capsule area */}
-
-        <div className="space-y-4 max-w-md mx-auto">
-          <div className="flex justify-between text-sm font-medium text-white/50">
-            <span>0%</span>
-            <span>{Math.round(progress * 100)}%</span>
-            <span>100%</span>
-          </div>
+        <div className="space-y-4">
+          {/* Ползунок */}
           <input
             type="range"
             min="0"
@@ -35,22 +41,23 @@ export default function App() {
             step="0.01"
             value={progress}
             onChange={(e) => setProgress(parseFloat(e.target.value))}
-            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+            className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
           />
-          <div className="flex justify-center pt-4">
-            <button
-              onClick={() => setIsWaving(!isWaving)}
-              className={`px-6 py-2 rounded-full font-medium transition-all duration-300 ${
-                isWaving 
-                  ? 'bg-white text-black hover:bg-white/90 scale-105' 
-                  : 'bg-white/10 text-white hover:bg-white/20 border border-white/20'
-              }`}
-            >
-              {isWaving ? 'Stop Waves' : 'Generate Waves'}
-            </button>
-          </div>
+
+          {/* Кнопка */}
+          <button
+            onClick={() => setIsWaving(!isWaving)}
+            className={`w-full py-2.5 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all ${
+              isWaving 
+                ? 'bg-white text-black scale-[0.98]' 
+                : 'bg-white/10 text-white border border-white/10 hover:bg-white/20'
+            }`}
+          >
+            {isWaving ? 'Stop Waves' : 'Generate Waves'}
+          </button>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }
