@@ -14,13 +14,13 @@ export default function App() {
     <div className="min-h-screen flex flex-col items-center justify-center p-8">
       <RealisticProgressBar progress={progress} isWaving={isWaving} />
       
-      <div className="w-full max-w-2xl space-y-12 bg-black/20 backdrop-blur-md p-12 rounded-3xl border border-white/10 shadow-2xl relative z-10">
-        <div className="text-center space-y-4">
+      <div className="w-full max-w-2xl space-y-8 bg-black/20 backdrop-blur-md p-8 rounded-3xl border border-white/10 shadow-2xl relative z-10">
+        <div className="text-center space-y-3">
           <h1 className="text-3xl font-medium text-white tracking-tight">Realistic Water Shader</h1>
           <p className="text-white/60">WebGL SPH Simulation</p>
         </div>
 
-        <div className="h-48" /> {/* Spacer for the capsule area */}
+        <div className="h-28" /> {/* Spacer for the capsule area */}
 
         <div className="space-y-4 max-w-md mx-auto">
           <div className="flex justify-between text-sm font-medium text-white/50">
