@@ -33,6 +33,10 @@ layout(std140) uniform Update {
 uniform vec2  g;
 uniform vec4  pointerPosVel;
 uniform float pointerRadius;
+uniform float u_progress;
+uniform float particleCount;
+uniform float u_time;
+uniform float u_wave_amplitude;
 uniform sampler2D  posTex;
 uniform isampler2D intPosTex;
 uniform sampler2D  velTex;
@@ -52,6 +56,18 @@ vec2 idx2uv(in float idx, in vec4 texelSizeOffset) {
 
 vec2 cell2uv(in vec2 cell) {
     return idx2uv(cell.y * cellResolution.x + cell.x, cellTexelSizeOffset);
+}
+
+float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - r;
+}
+
+vec2 calcCapsuleNormal(vec2 p, vec2 a, vec2 b, float r) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return normalize(pa - ba * h);
 }
 
 vec2 calcAcceleration() {
@@ -109,10 +125,24 @@ vec2 calcAcceleration() {
         }
     }
 
-    float dist_iw = domainRadius - length(pos_i) + 0.5 * dp;
+    vec2 capA = vec2(-6.0, 0.0);
+    vec2 capB = vec2(6.0, 0.0);
+    
+    // Apply animation
+    float angle = sin(u_time * 2.0) * 0.261799 * u_wave_amplitude; // 15 degrees in radians
+    float offsetX = sin(u_time * 1.5) * 1.5 * u_wave_amplitude;
+    
+    mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+    capA = rot * capA;
+    capB = rot * capB;
+    capA.x += offsetX;
+    capB.x += offsetX;
+
+    float capRadius = 1.5;
+    float dist_iw = -sdCapsule(pos_i, capA, capB, capRadius) + 0.5 * dp;
     if (dist_iw < kernelRadius) {
         vec2  accWKer = texture(accWallKerTex, vec2(dist_iw * rcplKernelRadius, 0.5)).xy;
-        vec2  posDir  = normalize(pos_i);
+        vec2  posDir  = calcCapsuleNormal(pos_i, capA, capB, capRadius);
         float pres    = max((pr_i.x + rho0 * dot(g, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
         float repul   = 10.0 * coefRepul * clamp(dp - dist_iw, 0.0, 0.5 * dp);
         acc_i += (pres * accWKer.x - repul) * posDir + 0.2 * coefViscosity * vel_i * pr_i.y * rcplRho0 * accWKer.y;
@@ -125,10 +155,28 @@ vec2 calcAcceleration() {
 }
 
 void main(void) {
+    float particleIndex = floor(gl_FragCoord.y) * round(1.0 / particleTexelSizeOffset.x) + floor(gl_FragCoord.x);
+    float activeCount = u_progress * particleCount;
+    
+    if (particleIndex >= activeCount) {
+        // Hide particle
+        oPos = vec4(1000.0, 1000.0, 0.0, 0.0);
+        oVel = vec2(0.0);
+        oIntPos = ivec2(round(vec2(1000.0, 1000.0) * toIntPos));
+        return;
+    }
+
     vec2 acc  = calcAcceleration();
     vec4 pvh  = texture(posTex, gl_FragCoord.xy * particleTexelSizeOffset.xy);
     vec2 pos  = pvh.xy;
     vec2 velh = pvh.zw;
+
+    if (pos.x > 500.0) {
+        // Just became active! Teleport to top of capsule
+        float randX = fract(sin(particleIndex * 12.9898) * 43758.5453) * 10.0 - 5.0;
+        pos = vec2(randX, 1.0);
+        velh = vec2(0.0, -2.0);
+    }
 
     float dist_im_sq = dot(pos - pointerPosVel.xy, pos - pointerPosVel.xy);
     if (dist_im_sq < pointerRadius * pointerRadius) {

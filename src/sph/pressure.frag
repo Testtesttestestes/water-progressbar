@@ -41,6 +41,12 @@ vec2 cell2uv(in vec2 cell) {
     return idx2uv(cell.y * cellResolution.x + cell.x, cellTexelSizeOffset);
 }
 
+float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - r;
+}
+
 void main(void) {
     vec2 uv_i  = gl_FragCoord.xy * particleTexelSizeOffset.xy;
     vec2 pos_i = vec2(texture(intPosTex, uv_i).xy) * toFloatPos;
@@ -61,7 +67,11 @@ void main(void) {
         }
     }
 
-    float u_w = (domainRadius - length(pos_i) + 0.5 * dp) * rcplKernelRadius;
+    vec2 capA = vec2(-6.0, 0.0);
+    vec2 capB = vec2(6.0, 0.0);
+    float capRadius = 1.5;
+    float dist_iw = -sdCapsule(pos_i, capA, capB, capRadius) + 0.5 * dp;
+    float u_w = dist_iw * rcplKernelRadius;
     if (u_w < 1.0)
         rho_i += texture(densWallKerTex, vec2(u_w, 0.5)).x;
 

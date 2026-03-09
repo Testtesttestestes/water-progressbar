@@ -1,31 +1,42 @@
-import { loadTextFileAsync } from './load.js';
 import { Vec2 } from './mathtype.js';
 import * as GLU from './glutils.js';
 import { uniformBlockBindingTable } from './uniformblock.js';
 import { ShaderProgram } from './shaderprogram.js';
 import { FramebufferObject } from './framebufferobject.js';
 
+import fullscreenVert from './fullscreen.vert?raw';
+import pointspriteVert from './pointsprite.vert?raw';
+import smoothposVert from './smoothpos.vert?raw';
+import msVert from './ms.vert?raw';
+import inittableVert from './inittable.vert?raw';
+
+import backgroundFrag from './background.frag?raw';
+import pointspriteFrag from './pointsprite.frag?raw';
+import smoothposFrag from './smoothpos.frag?raw';
+import weightedcenterFrag from './weightedcenter.frag?raw';
+import distancefieldFrag from './distancefield.frag?raw';
+import msFrag from './ms.frag?raw';
+import inittableFrag from './inittable.frag?raw';
+
 let _gl;
 let _canvas;
 
-const _vertFilenames = [
-    'fullscreen.vert' ,
-    'pointsprite.vert',
-    'smoothpos.vert'  ,
-    'ms.vert'         ,
-    'inittable.vert'
+const _vertSources = [
+    fullscreenVert,
+    pointspriteVert,
+    smoothposVert,
+    msVert,
+    inittableVert
 ];
-const _fragFilenames = [
-    'background.frag'    ,
-    'pointsprite.frag'   ,
-    'smoothpos.frag'     ,
-    'weightedcenter.frag',
-    'distancefield.frag' ,
-    'ms.frag'            ,
-    'inittable.frag'
+const _fragSources = [
+    backgroundFrag,
+    pointspriteFrag,
+    smoothposFrag,
+    weightedcenterFrag,
+    distancefieldFrag,
+    msFrag,
+    inittableFrag
 ];
-let _vertSources;
-let _fragSources;
 
 let _backgroundProgram;
 let _pointSpriteProgram;
@@ -49,13 +60,11 @@ let _renderingArea = { min: Vec2.zero(), max: new Vec2(1) };
 
 let _simToClip = { scale: new Vec2(1), move: Vec2.zero() };
 
-
+let _time = 0.0;
+let _waveAmplitude = 0.0;
 
 export const loadShaderFilesAsync = async () => {
-    let paths = [..._vertFilenames, ..._fragFilenames].map(n => './shaders/' + n);
-    let sources = await loadTextFileAsync(...paths);
-    _vertSources = sources.slice(0, _vertFilenames.length);
-    _fragSources = sources.slice(_vertFilenames.length);
+    // Shaders are imported synchronously via Vite ?raw
 };
 
 export const init = (gl, canvas, meshSize, meshingAreaMin, meshingAreaMax) => {
@@ -85,6 +94,11 @@ export const init = (gl, canvas, meshSize, meshingAreaMin, meshingAreaMax) => {
     ]);
 };
 
+export const setAnimationParams = (time, waveAmplitude) => {
+    _time = time;
+    _waveAmplitude = waveAmplitude;
+};
+
 export const setRenderingSimulationArea = (min, max) => {
     _renderingArea = { min, max };
     _calcSimToClip();
@@ -99,7 +113,7 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
         _smoothPosFBO.resize(particleTexReso.x, particleTexReso.y);
     }
 
-    let smoothRadius = 2.25 * dp;
+    let smoothRadius = 3.25 * dp;
 
     _smoothPosProgram.use();
     _smoothPosFBO.bind();
@@ -117,26 +131,19 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
 
     _distanceFieldProgram.use();
     _distanceFieldFBO.bind();
-    _gl.uniform1f(_distanceFieldProgram.uniform('particleRadius'), dp/2);
+    _gl.uniform1f(_distanceFieldProgram.uniform('particleRadius'), dp * 0.8);
     GLU.bindTextureUniform(_gl, 0, _distanceFieldProgram.uniform('weightedCenterTex'), _weightedCenterFBO.texture('tex'));
     _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 
     _gl.bindFramebuffer(_gl.DRAW_FRAMEBUFFER, null);
     _gl.viewport(0, 0, _canvas.width, _canvas.height);
 
-    _backgroundProgram.use();
-    _gl.uniform2f(_backgroundProgram.uniform('rcplResolution'), 1/_canvas.width, 1/_canvas.height);
-    _gl.drawArrays(_gl.TRIANGLES, 0, 3);
-
     _marchingSquaresProgram.use();
-    _gl.enable(_gl.BLEND);
-    _gl.blendFuncSeparate(_gl.SRC_ALPHA, _gl.ONE_MINUS_SRC_ALPHA, _gl.ONE, _gl.ONE);
-    _gl.uniform4f(_marchingSquaresProgram.uniform('moveScale'), _simToClip.move.x, _simToClip.move.y, _simToClip.scale.x, _simToClip.scale.y);
-    GLU.bindTextureUniform(_gl, 0, _marchingSquaresProgram.uniform('distFieldTex'), _distanceFieldFBO.texture('tex'));
-    GLU.bindTextureUniform(_gl, 1, _marchingSquaresProgram.uniform('tableTex'), _tabelTex);
-    _gl.drawArraysInstanced(_gl.TRIANGLE_STRIP, 0, 6, _resolution.x * _resolution.y);
-
-    _gl.disable(_gl.BLEND);
+    _gl.uniform2f(_marchingSquaresProgram.uniform('u_resolution'), _canvas.width, _canvas.height);
+    _gl.uniform1f(_marchingSquaresProgram.uniform('u_time'), _time);
+    _gl.uniform1f(_marchingSquaresProgram.uniform('u_wave_amplitude'), _waveAmplitude);
+    GLU.bindTextureUniform(_gl, 0, _marchingSquaresProgram.uniform('distanceFieldTex'), _distanceFieldFBO.texture('tex'));
+    _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 };
 
 export const renderParticles = (particleCount, dp, _1, intPosTex, velTex, _2) => {
@@ -166,7 +173,7 @@ const _createPrograms = () => {
     _smoothPosProgram       = create(_vertSources[2], _fragSources[2], null, null, ['ParticleTexture', 'CellTexture', 'ToIntPos', 'ToFloatPos', 'Cell']);
     _weightedCenterProgram  = create(_vertSources[0], _fragSources[3], null, null, ['ParticleTexture', 'CellTexture', 'ToFloatPos', 'Cell', 'MarchingSquares']);
     _distanceFieldProgram   = create(_vertSources[0], _fragSources[4], null, null, ['MarchingSquares']);
-    _marchingSquaresProgram = create(_vertSources[3], _fragSources[5], null, null, ['MarchingSquares']);
+    _marchingSquaresProgram = create(_vertSources[0], _fragSources[5], null, null, []);
     _initTableProgram       = create(_vertSources[4], _fragSources[6], [0], [1]);
 };
 

@@ -1,40 +1,56 @@
-import { loadTextFileAsync } from './load.js';
 import { Vec2 } from './mathtype.js';
 import * as GLU from './glutils.js';
 import { uniformBlockBindingTable } from './uniformblock.js';
 import { ShaderProgram } from './shaderprogram.js';
 import { FramebufferObject } from './framebufferobject.js';
 
+import initparticlesVert from './initparticles.vert?raw';
+import initwallkernelVert from './initwallkernel.vert?raw';
+import sphVert from './sph.vert?raw';
+import writeindexVert from './writeindex.vert?raw';
+import aggregatesubcellVert from './aggregatesubcell.vert?raw';
+import xwidthscanVert from './xwidthscan.vert?raw';
+import cellbeginendVert from './cellbeginend.vert?raw';
+import sortparticlesVert from './sortparticles.vert?raw';
+
+import initparticlesFrag from './initparticles.frag?raw';
+import initwallkernelFrag from './initwallkernel.frag?raw';
+import pressureFrag from './pressure.frag?raw';
+import updateFrag from './update.frag?raw';
+import writeindexFrag from './writeindex.frag?raw';
+import aggregatesubcellFrag from './aggregatesubcell.frag?raw';
+import xwidthscanFrag from './xwidthscan.frag?raw';
+import cellbeginendFrag from './cellbeginend.frag?raw';
+import sortparticlesFrag from './sortparticles.frag?raw';
+
 let _gl;
 
 const _gravity       = new Vec2(0, -10);
-const _rho0          = 1; //1000だと圧力が半精度では表現できなくなるので適当な値にする
+const _rho0          = 2000; //1000だと圧力が半精度では表現できなくなるので適当な値にする
 const _viscosity     = 0.1 * _rho0;
 const _surfTension   = 2;
 
-const _vertFilenames = [
-    'initparticles.vert',
-    'initwallkernel.vert',
-    'sph.vert',
-    'writeindex.vert',
-    'aggregatesubcell.vert',
-    'xwidthscan.vert',
-    'cellbeginend.vert',
-    'sortparticles.vert'
+const _vertSources = [
+    initparticlesVert,
+    initwallkernelVert,
+    sphVert,
+    writeindexVert,
+    aggregatesubcellVert,
+    xwidthscanVert,
+    cellbeginendVert,
+    sortparticlesVert
 ];
-const _fragFilenames = [
-    'initparticles.frag',
-    'initwallkernel.frag',
-    'pressure.frag',
-    'update.frag',
-    'writeindex.frag',
-    'aggregatesubcell.frag',
-    'xwidthscan.frag',
-    'cellbeginend.frag',
-    'sortparticles.frag'
+const _fragSources = [
+    initparticlesFrag,
+    initwallkernelFrag,
+    pressureFrag,
+    updateFrag,
+    writeindexFrag,
+    aggregatesubcellFrag,
+    xwidthscanFrag,
+    cellbeginendFrag,
+    sortparticlesFrag
 ];
-let _vertSources;
-let _fragSources;
 
 let _calcPressureProgram;
 let _updateParticlesProgram;
@@ -73,6 +89,10 @@ let _is1stStep = true;
 let _pointerPos = Vec2.zero();
 let _pointerVel = Vec2.zero();
 
+let _progress = 1.0;
+let _time = 0.0;
+let _waveAmplitude = 0.0;
+
 const _helper = {
     sampleParticles5x5: (dp) => {
         let p = [];
@@ -89,10 +109,7 @@ const _helper = {
 
 
 export const loadShaderFilesAsync = async () => {
-    let paths = [..._vertFilenames, ..._fragFilenames].map(n => './shaders/' + n);
-    let sources = await loadTextFileAsync(...paths);
-    _vertSources = sources.slice(0, _vertFilenames.length);
-    _fragSources = sources.slice(_vertFilenames.length);
+    // Shaders are imported synchronously via Vite ?raw
 };
 
 export const init = (gl, particleSpacing, fluidDomainRadius, posArray) => {
@@ -142,6 +159,15 @@ export const visualize = (callback) => {
             _posVelReadFBO.texture('vel'), 
             _cellBeginEndFBO.texture('cellBeginEnd')
     );
+};
+
+export const injectWater = (volumeRatio) => {
+    _progress = volumeRatio;
+};
+
+export const setAnimationParams = (time, waveAmplitude) => {
+    _time = time;
+    _waveAmplitude = waveAmplitude;
 };
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -311,6 +337,10 @@ const _updateParticles = () => {
     _gl.uniform2f(_updateParticlesProgram.uniform('g'), _gravity.x, _gravity.y);
     _gl.uniform4f(_updateParticlesProgram.uniform('pointerPosVel'), _pointerPos.x, _pointerPos.y, _pointerVel.x, _pointerVel.y);
     _gl.uniform1f(_updateParticlesProgram.uniform('pointerRadius'), 3);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_progress'), _progress);
+    _gl.uniform1f(_updateParticlesProgram.uniform('particleCount'), _particleCount);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_time'), _time);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_wave_amplitude'), _waveAmplitude);
     GLU.bindTextureUniform(_gl, 0, _updateParticlesProgram.uniform('posTex'),          _posVelReadFBO.texture('posVelh'));
     GLU.bindTextureUniform(_gl, 1, _updateParticlesProgram.uniform('intPosTex'),       _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 2, _updateParticlesProgram.uniform('velTex'),          _calcPressureFBO.texture('tex'));
