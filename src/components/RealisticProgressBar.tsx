@@ -4,7 +4,7 @@ import * as Renderer from '../sph/renderer.js';
 import * as SPH from '../sph/sph.js';
 
 interface RealisticProgressBarProps {
-  progress: number; // от 0.0 до 1.0
+  progress: number;
   isWaving?: boolean;
   tiltAngle?: number;
   flaskWidth?: number;
@@ -12,8 +12,6 @@ interface RealisticProgressBarProps {
   className?: string;
   meshQuality?: 'high' | 'balanced' | 'low';
 }
-
-
 
 type KinematicSample = {
   time: number;
@@ -35,8 +33,7 @@ const FLASK_MOTION = {
 const getContainerPose = (time: number, waveAmplitude: number) => {
   const offsetX = Math.sin(time * FLASK_MOTION.offsetXFreq) * FLASK_MOTION.offsetXAmp * waveAmplitude;
   const dynamicAngle = Math.sin(time * FLASK_MOTION.angleFreq) * FLASK_MOTION.angleAmp * waveAmplitude;
-  const angle = dynamicAngle;
-  return { position: new Vec2(offsetX, 3.0), angle };
+  return { position: new Vec2(offsetX, 3.0), angle: dynamicAngle };
 };
 
 const MESH_QUALITY_FACTORS: Record<NonNullable<RealisticProgressBarProps['meshQuality']>, number> = {
@@ -55,6 +52,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   meshQuality = 'low',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const glassRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(progress);
   const isWavingRef = useRef(isWaving);
   const waveAmplitudeRef = useRef(0.0);
@@ -82,194 +80,209 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     if (!canvas) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        let clipX = (x / canvas.width) * 2 - 1;
-        let clipY = -((y / canvas.height) * 2 - 1);
-        
-        const simPos = Renderer.clipPosToSimPos(new Vec2(clipX, clipY));
-        SPH.setPointerPos(simPos);
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const clipX = (x / canvas.width) * 2 - 1;
+      const clipY = -((y / canvas.height) * 2 - 1);
+
+      const simPos = Renderer.clipPosToSimPos(new Vec2(clipX, clipY));
+      SPH.setPointerPos(simPos);
     };
 
     const handleMouseLeave = () => {
-        SPH.setPointerPos(new Vec2(0, 0));
+      SPH.setPointerPos(new Vec2(0, 0));
     };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseleave', handleMouseLeave);
 
-    let gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true });
+    const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true });
     if (!gl) {
-        console.error('WebGL2 unsupported.');
-        return;
+      console.error('WebGL2 unsupported.');
+      return;
     }
     if (!gl.getExtension('EXT_color_buffer_float')) {
-        console.error('WebGL2-extention "EXT_color_buffer_float" unsupported.');
-        return;
+      console.error('WebGL2-extention "EXT_color_buffer_float" unsupported.');
+      return;
     }
 
-    const R0 = 12;
     const dp = 8 / 64;
-    const fluidDomainR = 0.95 * R0;
+    const fluidDomainR = 11.4;
+    const boxRadius = 0.8;
 
     const createParticlesRoundedBox = () => {
-        let pos = [];
-        const boxSize = { x: flaskWidth / 2, y: flaskHeight / 2 };
-        let boxRadius = 0.8;
-        
-        let minX = -7.5;
-        let maxX = 7.5;
-        let minY = -1.0;
-        let maxY = 5.0;
-        
-        const sdRoundedBox = (px: number, py: number, bx: number, by: number, r: number) => {
-            let qx = Math.abs(px) - bx + r;
-            let qy = Math.abs(py) - by + r;
-            let extX = Math.max(qx, 0);
-            let extY = Math.max(qy, 0);
-            return Math.min(Math.max(qx, qy), 0.0) + Math.sqrt(extX * extX + extY * extY) - r;
-        };
+      const pos = [];
+      const boxSize = { x: flaskWidth / 2, y: flaskHeight / 2 };
 
-        for (let x = minX; x <= maxX; x += dp * 1.05) {
-            for (let y = minY; y <= maxY; y += dp * 1.05) {
-                let dist = sdRoundedBox(x, y - 3.0, boxSize.x, boxSize.y, boxRadius);
-                
-                // Fill the volume
-                if (dist < -dp * 0.5) {
-                    pos.push(x, y);
-                }
-            }
+      const minX = -boxSize.x - 2.0;
+      const maxX = boxSize.x + 2.0;
+      const minY = 3.0 - boxSize.y - 2.0;
+      const maxY = 3.0 + boxSize.y + 2.0;
+
+      const sdRoundedBox = (px: number, py: number, bx: number, by: number, r: number) => {
+        const qx = Math.abs(px) - bx + r;
+        const qy = Math.abs(py) - by + r;
+        const extX = Math.max(qx, 0);
+        const extY = Math.max(qy, 0);
+        return Math.min(Math.max(qx, qy), 0.0) + Math.sqrt(extX * extX + extY * extY) - r;
+      };
+
+      for (let x = minX; x <= maxX; x += dp * 1.05) {
+        for (let y = minY; y <= maxY; y += dp * 1.05) {
+          const dist = sdRoundedBox(x, y - 3.0, boxSize.x, boxSize.y, boxRadius);
+          if (dist < -dp * 0.5) {
+            pos.push(x, y);
+          }
         }
-        return pos;
+      }
+      return pos;
     };
 
     let animationFrameId: number;
     let lastTime = performance.now();
 
     const initAsync = async () => {
-        await Promise.all([
-            SPH.loadShaderFilesAsync(),
-            Renderer.loadShaderFilesAsync(),
-        ]);
+      await Promise.all([SPH.loadShaderFilesAsync(), Renderer.loadShaderFilesAsync()]);
 
-        SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
-        SPH.setContainerSize(new Vec2(flaskWidth, flaskHeight));
-        Renderer.init(gl, canvas, dp, new Vec2(-R0), new Vec2(R0), {
-          meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
-        });
-        Renderer.setContainerSize(new Vec2(flaskWidth, flaskHeight));
-        Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
+      SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
+      SPH.setContainerSize(new Vec2(flaskWidth, flaskHeight));
+      Renderer.init(gl, canvas, dp, new Vec2(-10), new Vec2(10), {
+        meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
+      });
+      Renderer.setContainerSize(new Vec2(flaskWidth, flaskHeight));
 
-        const loop = (currentTime: number) => {
-            const dt = (currentTime - lastTime) / 1000;
-            lastTime = currentTime;
+      const loop = (currentTime: number) => {
+        const dt = (currentTime - lastTime) / 1000;
+        lastTime = currentTime;
 
-            // Resize canvas to match display size with device pixel ratio
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const displayWidth = Math.floor(canvas.clientWidth * dpr);
-            const displayHeight = Math.floor(canvas.clientHeight * dpr);
-            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-                canvas.width = displayWidth;
-                canvas.height = displayHeight;
-            }
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const displayWidth = Math.floor(canvas.clientWidth * dpr);
+        const displayHeight = Math.floor(canvas.clientHeight * dpr);
+        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+          canvas.width = displayWidth;
+          canvas.height = displayHeight;
+        }
 
-            const targetAmplitude = isWavingRef.current ? 1.0 : 0.0;
-            waveAmplitudeRef.current += (targetAmplitude - waveAmplitudeRef.current) * 0.05;
-            timeRef.current += dt;
+        const aspect = canvas.clientWidth / canvas.clientHeight;
+        const margin = 1.35;
+        const viewHeight = flaskHeight * margin;
+        const viewWidth = viewHeight * aspect;
 
-            const tiltSmoothingTime = 0.18;
-            const tiltLerp = 1.0 - Math.exp(-Math.max(dt, 0) / tiltSmoothingTime);
-            smoothedTiltAngleRef.current += (tiltAngleRef.current - smoothedTiltAngleRef.current) * tiltLerp;
+        Renderer.setRenderingSimulationArea(
+          new Vec2(-viewWidth / 2, 3.0 - viewHeight / 2),
+          new Vec2(viewWidth / 2, 3.0 + viewHeight / 2),
+        );
 
-            const safeDt = Math.max(dt, 1e-4);
-            const pose = getContainerPose(timeRef.current, waveAmplitudeRef.current);
-            pose.angle += smoothedTiltAngleRef.current;
-            const prev = kinematicPrevRef.current;
+        const targetAmplitude = isWavingRef.current ? 1.0 : 0.0;
+        waveAmplitudeRef.current += (targetAmplitude - waveAmplitudeRef.current) * 0.05;
+        timeRef.current += dt;
 
-            let velocity = new Vec2(0, 0);
-            let acceleration = new Vec2(0, 0);
-            let angularVelocity = 0.0;
-            let angularAcceleration = 0.0;
+        const tiltSmoothingTime = 0.18;
+        const tiltLerp = 1.0 - Math.exp(-Math.max(dt, 0) / tiltSmoothingTime);
+        smoothedTiltAngleRef.current += (tiltAngleRef.current - smoothedTiltAngleRef.current) * tiltLerp;
 
-            if (prev) {
-              velocity = Vec2.mul(1 / safeDt, Vec2.sub(pose.position, prev.pos));
-              angularVelocity = (pose.angle - prev.angle) / safeDt;
+        const safeDt = Math.max(dt, 1e-4);
+        const pose = getContainerPose(timeRef.current, waveAmplitudeRef.current);
+        pose.angle += smoothedTiltAngleRef.current;
 
-              acceleration = Vec2.mul(1 / safeDt, Vec2.sub(velocity, prev.vel));
-              angularAcceleration = (angularVelocity - prev.angVel) / safeDt;
+        if (glassRef.current) {
+          const scaleY = canvas.clientHeight / viewHeight;
+          const pxOffsetX = pose.position.x * scaleY;
+          const degAngle = pose.angle * (180 / Math.PI);
+          const pxRadius = boxRadius * scaleY;
 
-              const speedSignPrev = Math.sign(prev.vel.x);
-              const speedSignCurr = Math.sign(velocity.x);
-              const hasReverse = speedSignPrev !== 0 && speedSignCurr !== 0 && speedSignPrev !== speedSignCurr;
-              if (hasReverse) {
-                const deltaV = Vec2.sub(velocity, prev.vel);
-                reverseImpulseRef.current = {
-                  strength: Vec2.length(deltaV),
-                  age: 0.0,
-                  deltaV,
-                };
-              }
-            }
+          glassRef.current.style.transform = `translate(${pxOffsetX}px, 0px) rotate(${-degAngle}deg)`;
+          glassRef.current.style.width = `${(flaskWidth / viewWidth) * 100}%`;
+          glassRef.current.style.height = `${(flaskHeight / viewHeight) * 100}%`;
+          glassRef.current.style.borderRadius = `${pxRadius}px`;
+        }
 
-            reverseImpulseRef.current.age += safeDt;
+        const prev = kinematicPrevRef.current;
+        let velocity = new Vec2(0, 0);
+        let acceleration = new Vec2(0, 0);
+        let angularVelocity = 0.0;
+        let angularAcceleration = 0.0;
 
-            const sample: KinematicSample = {
-              time: timeRef.current,
-              pos: pose.position,
-              vel: velocity,
-              acc: acceleration,
-              angle: pose.angle,
-              angVel: angularVelocity,
-              angAcc: angularAcceleration,
-            };
-            kinematicPrevRef.current = sample;
+        if (prev) {
+          velocity = Vec2.mul(1 / safeDt, Vec2.sub(pose.position, prev.pos));
+          angularVelocity = (pose.angle - prev.angle) / safeDt;
+          acceleration = Vec2.mul(1 / safeDt, Vec2.sub(velocity, prev.vel));
+          angularAcceleration = (angularVelocity - prev.angVel) / safeDt;
 
-            SPH.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
-            SPH.setContainerKinematics({
-              position: pose.position,
-              velocity,
-              acceleration,
-              angle: pose.angle,
-              angularVelocity,
-              angularAcceleration,
-              reverseImpulseStrength: reverseImpulseRef.current.strength,
-              reverseImpulseAge: reverseImpulseRef.current.age,
-              reverseDeltaV: reverseImpulseRef.current.deltaV,
-            });
-            Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current, pose.position, pose.angle);
+          const speedSignPrev = Math.sign(prev.vel.x);
+          const speedSignCurr = Math.sign(velocity.x);
+          const hasReverse = speedSignPrev !== 0 && speedSignCurr !== 0 && speedSignPrev !== speedSignCurr;
+          if (hasReverse) {
+            const deltaV = Vec2.sub(velocity, prev.vel);
+            reverseImpulseRef.current = { strength: Vec2.length(deltaV), age: 0.0, deltaV };
+          }
+        }
+        reverseImpulseRef.current.age += safeDt;
 
-            for (let i = 0; i < 8; i++) SPH.step();
-
-            SPH.visualize(Renderer.renderWater);
-
-            animationFrameId = requestAnimationFrame(loop);
+        kinematicPrevRef.current = {
+          time: timeRef.current,
+          pos: pose.position,
+          vel: velocity,
+          acc: acceleration,
+          angle: pose.angle,
+          angVel: angularVelocity,
+          angAcc: angularAcceleration,
         };
+
+        SPH.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
+        SPH.setContainerKinematics({
+          position: pose.position,
+          velocity,
+          acceleration,
+          angle: pose.angle,
+          angularVelocity,
+          angularAcceleration,
+          reverseImpulseStrength: reverseImpulseRef.current.strength,
+          reverseImpulseAge: reverseImpulseRef.current.age,
+          reverseDeltaV: reverseImpulseRef.current.deltaV,
+        });
+        Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current, pose.position, pose.angle);
+
+        for (let i = 0; i < 8; i++) SPH.step();
+        SPH.visualize(Renderer.renderWater);
+
         animationFrameId = requestAnimationFrame(loop);
+      };
+      animationFrameId = requestAnimationFrame(loop);
     };
 
     initAsync();
 
     return () => {
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-        }
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseleave', handleMouseLeave);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseleave', handleMouseLeave);
     };
   }, [flaskHeight, flaskWidth, meshQuality]);
 
   return (
-    <canvas 
-      ref={canvasRef} 
-      className={className}
-      style={{ 
-        width: '100%', 
-        height: '100%', 
-        display: 'block', 
-        pointerEvents: 'none'
-      }} 
-    />
+    <div className={`relative w-full h-full overflow-hidden flex items-center justify-center ${className || ''}`}>
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 z-0 pointer-events-auto"
+        style={{ width: '100%', height: '100%', display: 'block' }}
+      />
+
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+        <div
+          ref={glassRef}
+          className="relative border-[rgba(255,255,255,0.15)] border-2 transition-none"
+          style={{
+            boxShadow:
+              'inset 0 0 var(--shadow-blur, 20px) var(--shadow-spread, -5px) var(--shadow-color, rgba(255,255,255,0.45))',
+            transformOrigin: 'center center',
+          }}
+        >
+          <div className="absolute top-0 left-2 right-2 h-[2px] bg-white opacity-20 rounded-full blur-[1px]"></div>
+        </div>
+      </div>
+    </div>
   );
 };
