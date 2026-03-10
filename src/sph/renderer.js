@@ -234,8 +234,11 @@ const _initTableTex = () => {
 }
 
 const _calcSimToClip = () => {
-    let aspect = _canvas.width / _canvas.height;
-    let tmp = aspect >= 1 ? new Vec2(1/aspect, 1) : new Vec2(1, aspect);
-    _simToClip.scale = Vec2.mul(Vec2.div(tmp, Vec2.sub(_renderingArea.max, _renderingArea.min)), 2);
-    _simToClip.move  = Vec2.minus(Vec2.add(Vec2.mul(_simToClip.scale, _renderingArea.min), tmp));
-;}
+    let size = Vec2.sub(_renderingArea.max, _renderingArea.min);
+
+    _simToClip.scale = new Vec2(2.0 / size.x, 2.0 / size.y);
+    _simToClip.move = new Vec2(
+        -1.0 - _renderingArea.min.x * _simToClip.scale.x,
+        -1.0 - _renderingArea.min.y * _simToClip.scale.y
+    );
+}

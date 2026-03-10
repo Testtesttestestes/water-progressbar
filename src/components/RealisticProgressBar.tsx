@@ -160,7 +160,9 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
           meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
         });
         Renderer.setContainerSize(new Vec2(flaskWidth, flaskHeight));
-        Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
+        const flaskMin = new Vec2(-flaskWidth / 2, 3.0 - flaskHeight / 2);
+        const flaskMax = new Vec2(flaskWidth / 2, 3.0 + flaskHeight / 2);
+        Renderer.setRenderingSimulationArea(flaskMin, flaskMax);
 
         const loop = (currentTime: number) => {
             const dt = (currentTime - lastTime) / 1000;
