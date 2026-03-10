@@ -57,6 +57,10 @@ float sdRoundedBox(vec2 p, vec2 b, float r) {
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
+float wallContactThickness() {
+    return max(dp, 0.08);
+}
+
 void main(void) {
     vec2 uv_i  = gl_FragCoord.xy * particleTexelSizeOffset.xy;
     vec2 pos_i = vec2(texture(intPosTex, uv_i).xy) * toFloatPos;
@@ -87,7 +91,7 @@ void main(void) {
     mat2 invRot = transpose(rot);
     vec2 p = invRot * (pos_i - u_container_pos);
 
-    float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
+    float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * wallContactThickness();
     float u_w = dist_iw * rcplKernelRadius;
     if (u_w < 1.0)
         rho_i += texture(densWallKerTex, vec2(u_w, 0.5)).x;
