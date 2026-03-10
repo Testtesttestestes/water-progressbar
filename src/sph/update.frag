@@ -171,7 +171,7 @@ vec2 calcAcceleration() {
         float relN   = dot(relVel, posDir);
         vec2 relT    = relVel - relN * posDir;
 
-        float sideTangentialScale = mix(1.0, 0.35, sideWallFactor);
+        float sideTangentialScale = mix(1.0, 0.15, sideWallFactor);
         float sidePressureScale = mix(1.0, 0.65, sideWallFactor);
 
         vec2 viscWall = (-wallNormalViscScale * relN * posDir - wallTangentialViscScale * sideTangentialScale * relT)
@@ -263,13 +263,16 @@ void main(void) {
         }
 
         float nearWallBlend = 1.0 - clamp(dist_iw / contactThickness, 0.0, 1.0);
+        float sideWallFactor = smoothstep(0.55, 0.9, abs(normalLocal.x));
         float tangentialDamping = clamp(1.0 - wallTangentialFriction * dt * (0.7 + 0.3 * nearWallBlend), 0.0, 1.0);
         relVT *= tangentialDamping;
 
         // Shared tangential drift from flask motion makes the whole contact layer move together.
         vec2 wallTangent = vec2(-wallNormal.y, wallNormal.x);
         float wallSlip = dot(wallVel, wallTangent);
-        float sideWallFactor = smoothstep(0.55, 0.9, abs(normalLocal.x));
+        float sideWallSlipCoupling = mix(1.0, 0.2, sideWallFactor);
+        wallVel -= (1.0 - sideWallSlipCoupling) * wallSlip * wallTangent;
+        wallSlip *= sideWallSlipCoupling;
         float cohesiveSlip = wallSlip * nearWallBlend * u_wave_amplitude * 0.35 * (1.0 - sideWallFactor);
 
         velh = wallVel + relVN * wallNormal + relVT + cohesiveSlip * wallTangent;
