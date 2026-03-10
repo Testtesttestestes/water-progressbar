@@ -30,8 +30,9 @@ vec2 getWaterNormal(vec2 uv) {
 void main() {
     vec2 screenUV = gl_FragCoord.xy / u_resolution.xy;
 
-    float viewHeight = u_container_size.y;
-
+    // Восстанавливаем точный масштаб (канвас имеет высоту flaskHeight + 6)
+    float viewHeight = u_container_size.y + 6.0;
+    
     vec2 simPos = u_container_pos + vec2(
         (screenUV.x - 0.5) * viewHeight * (u_resolution.x / u_resolution.y),
         (screenUV.y - 0.5) * viewHeight
@@ -45,6 +46,8 @@ void main() {
 
     vec2 boxSize = 0.5 * u_container_size;
     float boxRadius = 0.8;
+    
+    // Вращаем координаты для проверки границ стекла
     float angle = u_container_angle;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     mat2 invRot = transpose(rot);
@@ -55,23 +58,28 @@ void main() {
     vec3 col = vec3(0.0);
     float alpha = 0.0;
 
+    // Убираем зазор между краем частиц и стенкой
+    dWater -= 0.15; 
+
+    // РИСУЕМ ВОДУ ТОЛЬКО СТРОГО ВНУТРИ КОЛБЫ (dGlass < 0.0)
     if (dWater < 0.0 && dGlass < 0.0) {
         vec2 waterNormal = getWaterNormal(waterUV);
-
+        
+        // Мениск у краев колбы
         float edgeDist = abs(dGlass);
         if (edgeDist < 0.1) {
             waterNormal.y += smoothstep(0.1, 0.0, edgeDist) * 0.8;
             waterNormal = normalize(waterNormal);
         }
 
-        vec3 waterTint = vec3(0.3, 0.5, 0.9);
+        vec3 waterTint = vec3(0.2, 0.5, 0.9);
         float fresnel = pow(1.0 - max(dot(waterNormal, vec2(0.0, 1.0)), 0.0), 3.0);
-
+        
         float light = dot(waterNormal, normalize(vec2(0.5, 1.0)));
         vec3 reflection = mix(vec3(0.05, 0.1, 0.2), vec3(1.0, 1.0, 1.2), smoothstep(-0.5, 1.0, light));
-
+        
         col = waterTint * 0.4 + reflection * fresnel * 0.8;
-        alpha = mix(0.4, 0.85, fresnel);
+        alpha = mix(0.4, 0.9, fresnel);
 
         float spec = pow(max(dot(waterNormal, normalize(vec2(0.3, 0.8))), 0.0), 64.0);
         col += vec3(1.0) * spec * 1.5;
@@ -83,8 +91,9 @@ void main() {
         alpha += surfaceLine;
     }
 
+    // Абсолютная прозрачность вне воды
     alpha = clamp(alpha, 0.0, 1.0);
-    col *= alpha;
+    col *= alpha; // Важно для правильного смешивания с прозрачным фоном в WebGL
 
     outColor = vec4(col, alpha);
 }
