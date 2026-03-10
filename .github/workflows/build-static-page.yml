@@ -30,6 +30,17 @@ jobs:
       - name: Build app
         run: npm run build
 
+      - name: Verify gravity slider is present in bundle
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(dist/assets/index-*.js)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No built JS bundle found in dist/assets"
+            exit 1
+          fi
+          grep -n "Gravity" "${files[@]}"
+
       - name: Prepare release artifact
         run: |
           rm -rf release
