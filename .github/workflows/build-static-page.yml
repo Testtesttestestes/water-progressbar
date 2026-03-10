@@ -30,6 +30,9 @@ jobs:
       - name: Build app
         run: npm run build
 
+      - name: Verify gravity slider is present in bundle
+        run: rg -n "Gravity" dist/assets/index-*.js
+
       - name: Prepare release artifact
         run: |
           rm -rf release
