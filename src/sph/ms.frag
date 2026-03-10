@@ -35,13 +35,7 @@ vec3 getReflection(vec2 n) {
 void main() {
     vec2 screenUV = gl_FragCoord.xy / u_resolution.xy;
 
-    float padding = 6.0;
-    float viewHeight = u_container_size.y + padding;
-
-    vec2 simPos = u_container_pos + vec2(
-        (screenUV.x - 0.5) * viewHeight * (u_resolution.x / u_resolution.y),
-        (screenUV.y - 0.5) * viewHeight
-    );
+    vec2 simPos = u_container_pos + (screenUV - 0.5) * u_container_size;
 
     vec2 waterUV = (simPos - u_sim_min) / u_sim_size;
     float dWater = 1000.0;
