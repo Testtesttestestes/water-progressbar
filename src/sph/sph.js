@@ -26,6 +26,7 @@ import sortparticlesFrag from './sortparticles.frag?raw';
 let _gl;
 
 const _gravity       = new Vec2(0, -10);
+let _gravityScale    = 1.0;
 const _rho0          = 1; //1000だと圧力が半精度では表現できなくなるので適当な値にする
 const _viscosity     = 0.18 * _rho0;
 const _surfTension   = 2;
@@ -145,7 +146,8 @@ export const init = (gl, particleSpacing, fluidDomainRadius, posArray) => {
     _initWallKernelTex();
 
     let vel  = new Array(posArray.length).fill(0);
-    let velh = vel.map((v, i) => v-_dt/2*(i%2===0?_gravity.x:_gravity.y));
+    let g = _scaledGravity();
+    let velh = vel.map((v, i) => v-_dt/2*(i%2===0?g.x:g.y));
     let particleVBOs = [posArray, vel, velh].map(a => GLU.createVBO(_gl, a));
     _initPosVelTex(particleVBOs);
 };
@@ -188,12 +190,18 @@ export const setAnimationParams = (time, waveAmplitude) => {
     _waveAmplitude = waveAmplitude;
 };
 
+export const setGravityScale = (scale) => {
+    _gravityScale = Math.max(0, scale);
+};
+
 export const setContainerKinematics = (kinematics) => {
     _containerKinematics = {
         ..._containerKinematics,
         ...kinematics,
     };
 };
+
+const _scaledGravity = () => Vec2.mul(_gravityScale, _gravity);
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -226,7 +234,8 @@ const _initParams = () => {
     let mass       = _rho0 * volume0;
     let h          = 1.02 * _dp;
     _kernelRadius  = 2*h;
-    let velLimit   = Math.sqrt(2 * Vec2.length(_gravity) * _fluidDomainRadius);
+    let gravityLength = Math.max(Vec2.length(_scaledGravity()), 1e-4);
+    let velLimit   = Math.sqrt(2 * gravityLength * _fluidDomainRadius);
     let speedSound = 3 * velLimit;
     _dt            = 0.45 * h / velLimit;
     let pressB     = _rho0 * speedSound * speedSound / 2;
@@ -389,7 +398,8 @@ const _updateParticles = () => {
 
     _updateParticlesProgram.use();
     _posVelWriteFBO.bind();
-    _gl.uniform2f(_updateParticlesProgram.uniform('g'), _gravity.x, _gravity.y);
+    const g = _scaledGravity();
+    _gl.uniform2f(_updateParticlesProgram.uniform('g'), g.x, g.y);
     _gl.uniform4f(_updateParticlesProgram.uniform('pointerPosVel'), _pointerPos.x, _pointerPos.y, _pointerVel.x, _pointerVel.y);
     _gl.uniform1f(_updateParticlesProgram.uniform('pointerRadius'), 3);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_progress'), _progress);

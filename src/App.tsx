@@ -11,12 +11,19 @@ export default function App() {
   const [isWaving, setIsWaving] = useState(false);
   const [tiltAngle, setTiltAngle] = useState(0);
   const [particleScale, setParticleScale] = useState(1);
+  const [gravityScale, setGravityScale] = useState(1);
 
   return (
   <div className="relative h-screen w-full overflow-hidden bg-gray-900">
     {/* 1. Слой с водой (Канвас) — занимает весь экран на заднем плане */}
     <div className="absolute inset-0 z-0">
-      <RealisticProgressBar progress={progress} isWaving={isWaving} tiltAngle={tiltAngle} particleScale={particleScale} />
+      <RealisticProgressBar
+        progress={progress}
+        isWaving={isWaving}
+        tiltAngle={tiltAngle}
+        particleScale={particleScale}
+        gravityScale={gravityScale}
+      />
     </div>
 
     {/* 2. Слой интерфейса — только маленькая плашка внизу */}
@@ -75,6 +82,22 @@ export default function App() {
               step={0.005}
               value={tiltAngle}
               onChange={(e) => setTiltAngle(parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
+              <span>Gravity</span>
+              <span>{gravityScale.toFixed(2)}x</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.01"
+              value={gravityScale}
+              onChange={(e) => setGravityScale(parseFloat(e.target.value))}
               className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
             />
           </div>

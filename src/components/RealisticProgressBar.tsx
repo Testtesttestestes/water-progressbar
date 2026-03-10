@@ -11,6 +11,7 @@ interface RealisticProgressBarProps {
   className?: string;
   meshQuality?: 'high' | 'balanced' | 'low';
   particleScale?: number;
+  gravityScale?: number;
 }
 
 
@@ -52,6 +53,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   className,
   meshQuality = 'low',
   particleScale = 1,
+  gravityScale = 1,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef(progress);
@@ -59,6 +61,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   const waveAmplitudeRef = useRef(0.0);
   const timeRef = useRef(0.0);
   const tiltAngleRef = useRef(tiltAngle);
+  const gravityScaleRef = useRef(gravityScale);
   const smoothedTiltAngleRef = useRef(tiltAngle);
   const kinematicPrevRef = useRef<KinematicSample | null>(null);
   const reverseImpulseRef = useRef({ strength: 0.0, age: 1e6, deltaV: new Vec2(0, 0) });
@@ -75,6 +78,11 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   useEffect(() => {
     tiltAngleRef.current = tiltAngle;
   }, [tiltAngle]);
+
+  useEffect(() => {
+    gravityScaleRef.current = gravityScale;
+    SPH.setGravityScale(gravityScale);
+  }, [gravityScale]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -150,6 +158,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     let lastTime = performance.now();
 
     const initAsync = async () => {
+        SPH.setGravityScale(gravityScaleRef.current);
         const bgUrl = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
         const [bgTex] = await Promise.all([
             GLU.loadTexture(gl, bgUrl),
