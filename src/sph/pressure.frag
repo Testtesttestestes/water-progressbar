@@ -33,7 +33,6 @@ uniform float u_wave_amplitude;
 uniform vec2 u_container_pos;
 uniform vec2 u_container_vel;
 uniform vec2 u_container_acc;
-uniform vec2 u_container_size;
 uniform float u_container_angle;
 uniform float u_container_ang_vel;
 uniform float u_container_ang_acc;
@@ -78,7 +77,7 @@ void main(void) {
         }
     }
 
-    vec2 boxSize = 0.5 * u_container_size;
+    vec2 boxSize = vec2(5.0, 1.5);
     float boxRadius = 0.8;
     
     // Apply container pose from CPU kinematics

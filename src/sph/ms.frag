@@ -1,25 +1,32 @@
 #version 300 es
 precision highp float;
 
+uniform sampler2D u_bg_tex;
 uniform vec2 u_resolution;
-uniform sampler2D distanceFieldTex;
+uniform sampler2D distanceFieldTex; // Текстура с физикой воды от SPH
 uniform float u_time;
 uniform float u_wave_amplitude;
 uniform vec2 u_container_pos;
 uniform float u_container_angle;
-uniform vec2 u_container_size;
 uniform vec2 u_sim_min;
 uniform vec2 u_sim_size;
 
 out vec4 outColor;
 
+// Генератор фона (используем текстуру из вёрстки)
+vec3 getBackground(vec2 uv) {
+    return texture(u_bg_tex, uv).rgb;
+}
+
+// SDF скругленного прямоугольника (как в вёрстке)
 float sdRoundedBox(vec2 p, vec2 b, float r) {
     vec2 q = abs(p) - b + r;
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
+// Вычисление нормали воды на основе SDF текстуры
 vec2 getWaterNormal(vec2 uv) {
-    vec2 e = vec2(12.0 / 256.0, 0.0);
+    vec2 e = vec2(12.0 / 256.0, 0.0); // Сильное сглаживание нормалей
     float dx = texture(distanceFieldTex, uv + e.xy).r - texture(distanceFieldTex, uv - e.xy).r;
     float dy = texture(distanceFieldTex, uv + e.yx).r - texture(distanceFieldTex, uv - e.yx).r;
     vec2 n = vec2(dx, dy);
@@ -27,24 +34,33 @@ vec2 getWaterNormal(vec2 uv) {
     return len > 0.0001 ? n / len : vec2(0.0, 0.0);
 }
 
+// Динамические отражения (Fake Environment Map)
 vec3 getReflection(vec2 n) {
     float skyLight = smoothstep(0.0, 1.0, n.y);
-    return mix(vec3(0.05, 0.1, 0.15), vec3(0.8, 0.9, 1.0), skyLight);
+    return mix(vec3(0.1, 0.15, 0.2), vec3(1.0, 1.0, 1.2), skyLight);
 }
 
 void main() {
     vec2 screenUV = gl_FragCoord.xy / u_resolution.xy;
+    
+    // Map screen to Simulation Space
+    float viewHeight = 12.0;
+    vec2 simPos = vec2(
+        (screenUV.x - 0.5) * viewHeight * (u_resolution.x / u_resolution.y),
+        (screenUV.y - 0.5) * viewHeight
+    );
 
-    vec2 simPos = u_container_pos + (screenUV - 0.5) * u_container_size;
-
+    // Map SimSpace to distanceFieldTex UV
     vec2 waterUV = (simPos - u_sim_min) / u_sim_size;
     float dWater = 1000.0;
     if (waterUV.x >= 0.0 && waterUV.x <= 1.0 && waterUV.y >= 0.0 && waterUV.y <= 1.0) {
         dWater = texture(distanceFieldTex, waterUV).r;
     }
 
-    vec2 boxSize = 0.5 * u_container_size;
+    // Параметры формы (делаем чуть шире и "коробочнее" как в вёрстке)
+    vec2 boxSize = vec2(5.0, 1.5);
     float boxRadius = 0.8;
+    
     float angle = u_container_angle;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     mat2 invRot = transpose(rot);
@@ -52,78 +68,121 @@ void main() {
 
     float dGlass = sdRoundedBox(p, boxSize, boxRadius);
 
-    vec3 col = vec3(0.0);
-    float alpha = 0.0;
-
-    if (dGlass < 0.05) {
-        bool isWater = (dWater < 0.0 && dGlass < -0.05);
-
-        if (isWater) {
-            vec2 waterNormal = getWaterNormal(waterUV);
+    // --- ОПТИКА И РЕФРАКЦИЯ ---
+    vec2 distortedUV = screenUV;
+    vec2 waterNormal = vec2(0.0);
+    bool isWater = false;
+    float glassThickness = 0.0;
+    vec2 glassNormal = vec2(0.0);
+    
+    if (dGlass < 0.0) {
+        glassThickness = 1.0 - pow(abs(dGlass) / boxRadius, 0.5);
+        
+        // Вычисление нормали для скругленного бокса
+        vec2 e = vec2(0.01, 0.0);
+        glassNormal = normalize(vec2(
+            sdRoundedBox(p + e.xy, boxSize, boxRadius) - sdRoundedBox(p - e.xy, boxSize, boxRadius),
+            sdRoundedBox(p + e.yx, boxSize, boxRadius) - sdRoundedBox(p - e.yx, boxSize, boxRadius)
+        ));
+        // Возвращаем нормаль в мировое пространство
+        glassNormal = rot * glassNormal;
+        
+        // Маска воды
+        if (dWater < 0.0 && dGlass < -0.05) {
+            isWater = true;
+            waterNormal = getWaterNormal(waterUV);
+            
+            // Мениск: натяжение у стенок колбы
             float edgeDist = abs(dGlass + 0.05);
             if (edgeDist < 0.1) {
                 waterNormal.y += smoothstep(0.1, 0.0, edgeDist) * 0.8;
                 waterNormal = normalize(waterNormal);
             }
 
+            // Затухание рефракции на глубине
+            // Чем глубже, тем меньше шумные нормали SPH искажают фон
+            float depthDamping = smoothstep(0.5, 0.0, abs(dWater)); 
+
+            // Физически корректная рефракция, которая успокаивается на глубине
+            vec2 refractionOffset = waterNormal * 0.08 * glassThickness * depthDamping;
+            distortedUV += refractionOffset;
+        } else {
+            distortedUV += glassNormal * 0.02; // Пустая колба
+        }
+    }
+
+    // Хроматическая аберрация (RGB сдвиг)
+    float caStrength = isWater ? 0.006 : 0.002;
+    float r = getBackground(distortedUV - vec2(caStrength, 0.0)).r;
+    float g = getBackground(distortedUV).g;
+    float b = getBackground(distortedUV + vec2(caStrength, 0.0)).b;
+    vec3 col = vec3(r, g, b);
+
+    // --- МАТЕРИАЛЫ И БЛИКИ (Стиль из вёрстки) ---
+    if (dGlass < 0.0) {
+        // 1. Тинт стекла (белый полупрозрачный из вёрстки: tint-opacity 0.06)
+        col = mix(col, vec3(1.0), 0.06);
+
+        // 2. Внутренняя тень/свечение (из вёрстки: shadow-color rgba(255,255,255,0.45), blur 20px)
+        // Имитируем inset shadow через расстояние до края
+        float innerGlow = smoothstep(-0.8, 0.0, dGlass);
+        col += vec3(1.0) * innerGlow * 0.35;
+
+        if (isWater) {
+            // 2. Глубина и поглощение (Кристально чистая вода)
             float opticalDepth = abs(dWater);
-            vec3 extinction = exp(-opticalDepth * vec3(0.3, 0.15, 0.05));
-            vec3 waterTint = vec3(0.1, 0.5, 0.8);
+            vec3 extinction = exp(-opticalDepth * vec3(0.2, 0.1, 0.02));
+            vec3 waterTint = vec3(0.4, 0.7, 0.9);
+            col = col * extinction + waterTint * (1.0 - extinction) * 0.3;
 
-            col = waterTint * (1.0 - extinction) * 0.8;
-            alpha = mix(0.75, 0.35, (extinction.r + extinction.g + extinction.b) / 3.0);
-
+            // 3. Отражения и Френель (только на поверхности)
             float surfaceMask = smoothstep(0.3, 0.0, abs(dWater));
             vec3 reflection = getReflection(waterNormal);
             float fresnel = pow(1.0 - max(dot(waterNormal, vec2(0.0, 1.0)), 0.0), 4.0);
-            col += reflection * fresnel * 0.6 * surfaceMask;
-            alpha += fresnel * 0.5 * surfaceMask;
-
+            col = mix(col, reflection, fresnel * 0.5 * surfaceMask);
+            
+            // 4. Двойной Спекуляр (Блик)
             float specA = pow(max(dot(waterNormal, normalize(vec2(0.5, 1.0))), 0.0), 64.0);
             float specB = pow(max(dot(waterNormal, normalize(vec2(-0.4, 0.8))), 0.0), 128.0);
-            float spec = (specA + specB) * 0.8 * surfaceMask;
-            col += vec3(1.0) * spec;
-            alpha += spec;
+            col += (vec3(1.0, 1.0, 0.9) * specA + vec3(0.8, 0.9, 1.0) * specB) * 0.8 * surfaceMask;
 
+            // 5. Каустика (опционально)
+            float caustic = 0.05 * sin(waterUV.x * 40.0 + u_time * 2.0) * sin(waterUV.y * 40.0 - u_time * 2.0);
+            col += max(caustic, 0.0) * extinction.g;
+
+            // --- ГЛАВНЫЙ ШТРИХ: Линия поверхности ---
+            // Рисуем яркую кромку там, где dWater близко к 0
             float w = max(fwidth(dWater), 0.001);
             float surfaceLine = 1.0 - smoothstep(0.0, w * 2.0, abs(dWater));
+
+            // Делаем блик ярче у краев стекла (мениск)
             float meniscus = smoothstep(0.1, 0.0, abs(dGlass + 0.05));
             float highlightIntensity = 0.5 + meniscus * 0.5;
-            col += vec3(1.0) * surfaceLine * highlightIntensity;
-            alpha += surfaceLine * highlightIntensity;
 
-        } else if (dGlass < 0.0) {
-            col = vec3(0.9, 0.95, 1.0);
-            alpha = 0.08;
+            // Добавляем поверхностный блик к цвету
+            col += vec3(1.0, 1.0, 1.0) * surfaceLine * highlightIntensity;
+        } else {
+            // Легкая синева стекла
+            col = mix(col, vec3(0.9, 0.95, 1.0), 0.1);
         }
 
-        if (dGlass < 0.0) {
-            float innerGlow = smoothstep(-0.8, 0.0, dGlass);
-            col += vec3(1.0) * innerGlow * 0.15;
-            alpha += innerGlow * 0.15;
+        // Блик стекла (более мягкий и широкий)
+        float highlightTop = smoothstep(0.15, 0.0, abs(p.y - (boxSize.y - 0.3)));
+        col += highlightTop * 0.5;
 
-            float highlightTop = smoothstep(0.15, 0.0, abs(p.y - (boxSize.y - 0.3)));
-            col += vec3(1.0) * highlightTop * 0.3;
-            alpha += highlightTop * 0.3;
-
-            float edgeShadow = smoothstep(0.0, -0.15, dGlass);
-            col *= mix(0.7, 1.0, edgeShadow);
-        }
+        // Френель (тень по контуру стекла)
+        float edgeShadow = smoothstep(0.0, -0.15, dGlass);
+        col *= mix(0.85, 1.0, edgeShadow);
     }
 
-    float shadowAlpha = 0.0;
-    if (dGlass > 0.0) {
-        shadowAlpha = (1.0 - smoothstep(0.0, 0.8, dGlass)) * 0.3;
-    }
+    // Сглаживание краев колбы (AA)
+    float glassAAWidth = max(fwidth(dGlass), 0.001);
+    float aa = smoothstep(0.0, glassAAWidth, dGlass);
+    vec3 finalBg = getBackground(screenUV);
+    
+    // Внешняя тень (из вёрстки: outer-shadow-blur 24px)
+    float outerShadow = smoothstep(0.0, 0.6, dGlass);
+    finalBg *= mix(0.85, 1.0, outerShadow);
 
-    float aa = smoothstep(0.0, max(fwidth(dGlass), 0.001), dGlass);
-
-    vec4 insideColor = vec4(col, clamp(alpha, 0.0, 1.0));
-    vec4 outsideColor = vec4(0.0, 0.0, 0.0, shadowAlpha);
-
-    vec4 finalColor = mix(insideColor, outsideColor, aa);
-
-    finalColor.rgb *= finalColor.a;
-
-    outColor = finalColor;
+    outColor = vec4(mix(col, finalBg, aa), 1.0);
 }

@@ -93,7 +93,6 @@ let _pointerVel = Vec2.zero();
 let _progress = 1.0;
 let _time = 0.0;
 let _waveAmplitude = 0.0;
-let _containerSize = new Vec2(10.0, 3.0);
 let _containerKinematics = {
     position: Vec2.zero(),
     velocity: Vec2.zero(),
@@ -194,10 +193,6 @@ export const setContainerKinematics = (kinematics) => {
         ..._containerKinematics,
         ...kinematics,
     };
-};
-
-export const setContainerSize = (size) => {
-    _containerSize = size;
 };
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -379,7 +374,6 @@ const _calcPressure = () => {
     _gl.uniform1f(_calcPressureProgram.uniform('u_container_angle'), _containerKinematics.angle);
     _gl.uniform1f(_calcPressureProgram.uniform('u_container_ang_vel'), _containerKinematics.angularVelocity);
     _gl.uniform1f(_calcPressureProgram.uniform('u_container_ang_acc'), _containerKinematics.angularAcceleration);
-    _gl.uniform2f(_calcPressureProgram.uniform('u_container_size'), _containerSize.x, _containerSize.y);
     _gl.uniform1f(_calcPressureProgram.uniform('u_reverse_impulse_strength'), _containerKinematics.reverseImpulseStrength);
     _gl.uniform1f(_calcPressureProgram.uniform('u_reverse_impulse_age'), _containerKinematics.reverseImpulseAge);
     _gl.uniform2f(_calcPressureProgram.uniform('u_reverse_delta_v'), _containerKinematics.reverseDeltaV.x, _containerKinematics.reverseDeltaV.y);
@@ -408,7 +402,6 @@ const _updateParticles = () => {
     _gl.uniform1f(_updateParticlesProgram.uniform('u_container_angle'), _containerKinematics.angle);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_container_ang_vel'), _containerKinematics.angularVelocity);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_container_ang_acc'), _containerKinematics.angularAcceleration);
-    _gl.uniform2f(_updateParticlesProgram.uniform('u_container_size'), _containerSize.x, _containerSize.y);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse_strength'), _containerKinematics.reverseImpulseStrength);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse_age'), _containerKinematics.reverseImpulseAge);
     _gl.uniform2f(_updateParticlesProgram.uniform('u_reverse_delta_v'), _containerKinematics.reverseDeltaV.x, _containerKinematics.reverseDeltaV.y);

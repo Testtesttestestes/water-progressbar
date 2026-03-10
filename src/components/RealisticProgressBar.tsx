@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import * as GLU from '../sph/glutils.js';
 import { Vec2 } from '../sph/mathtype.js';
 import * as Renderer from '../sph/renderer.js';
 import * as SPH from '../sph/sph.js';
@@ -7,8 +8,6 @@ interface RealisticProgressBarProps {
   progress: number; // от 0.0 до 1.0
   isWaving?: boolean;
   tiltAngle?: number;
-  flaskWidth?: number;
-  flaskHeight?: number;
   className?: string;
   meshQuality?: 'high' | 'balanced' | 'low';
 }
@@ -49,8 +48,6 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   progress,
   isWaving = false,
   tiltAngle = 0,
-  flaskWidth = 10,
-  flaskHeight = 3,
   className,
   meshQuality = 'low',
 }) => {
@@ -100,7 +97,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseleave', handleMouseLeave);
 
-    let gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true });
+    let gl = canvas.getContext('webgl2');
     if (!gl) {
         console.error('WebGL2 unsupported.');
         return;
@@ -116,7 +113,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
 
     const createParticlesRoundedBox = () => {
         let pos = [];
-        const boxSize = { x: flaskWidth / 2, y: flaskHeight / 2 };
+        let boxSize = {x: 5.0, y: 1.5};
         let boxRadius = 0.8;
         
         let minX = -7.5;
@@ -149,17 +146,18 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     let lastTime = performance.now();
 
     const initAsync = async () => {
-        await Promise.all([
-            SPH.loadShaderFilesAsync(),
-            Renderer.loadShaderFilesAsync(),
+        const bgUrl = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
+        const [bgTex] = await Promise.all([
+            GLU.loadTexture(gl, bgUrl),
+            SPH.loadShaderFilesAsync(), 
+            Renderer.loadShaderFilesAsync()
         ]);
-
+        
+        Renderer.setBackgroundTexture(bgTex);
         SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
-        SPH.setContainerSize(new Vec2(flaskWidth, flaskHeight));
         Renderer.init(gl, canvas, dp, new Vec2(-R0), new Vec2(R0), {
           meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
         });
-        Renderer.setContainerSize(new Vec2(flaskWidth, flaskHeight));
         Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
 
         const loop = (currentTime: number) => {
@@ -258,16 +256,20 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, [flaskHeight, flaskWidth, meshQuality]);
+  }, []);
 
   return (
     <canvas 
       ref={canvasRef} 
       className={className}
       style={{ 
-        width: '100%', 
-        height: '100%', 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        width: '100vw', 
+        height: '100vh', 
         display: 'block', 
+        zIndex: 0,
         pointerEvents: 'none'
       }} 
     />
