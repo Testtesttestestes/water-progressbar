@@ -39,6 +39,8 @@ uniform float u_container_ang_acc;
 uniform float u_reverse_impulse_strength;
 uniform float u_reverse_impulse_age;
 uniform vec2 u_reverse_delta_v;
+uniform vec2 u_flask_half_size;
+uniform float u_flask_radius;
 
 out vec4 o;
 
@@ -81,8 +83,8 @@ void main(void) {
         }
     }
 
-    vec2 boxSize = vec2(5.0, 1.5);
-    float boxRadius = 0.8;
+    vec2 boxSize = u_flask_half_size;
+    float boxRadius = u_flask_radius;
     
     // Apply container pose from CPU kinematics
     float angle = u_container_angle;

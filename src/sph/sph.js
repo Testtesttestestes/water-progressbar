@@ -93,6 +93,10 @@ let _pointerPos = Vec2.zero();
 let _pointerVel = Vec2.zero();
 
 let _progress = 1.0;
+let _flaskShape = {
+    boxHalfSize: new Vec2(5.0, 1.5),
+    radius: 0.8,
+};
 let _time = 0.0;
 let _waveAmplitude = 0.0;
 let _containerKinematics = {
@@ -387,6 +391,8 @@ const _calcPressure = () => {
     _gl.uniform1f(_calcPressureProgram.uniform('u_reverse_impulse_strength'), _containerKinematics.reverseImpulseStrength);
     _gl.uniform1f(_calcPressureProgram.uniform('u_reverse_impulse_age'), _containerKinematics.reverseImpulseAge);
     _gl.uniform2f(_calcPressureProgram.uniform('u_reverse_delta_v'), _containerKinematics.reverseDeltaV.x, _containerKinematics.reverseDeltaV.y);
+    _gl.uniform2f(_calcPressureProgram.uniform('u_flask_half_size'), _flaskShape.boxHalfSize.x, _flaskShape.boxHalfSize.y);
+    _gl.uniform1f(_calcPressureProgram.uniform('u_flask_radius'), _flaskShape.radius);
     GLU.bindTextureUniform(_gl, 0, _calcPressureProgram.uniform('intPosTex'),       _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 1, _calcPressureProgram.uniform('velTex'),          _posVelReadFBO.texture('vel'));
     GLU.bindTextureUniform(_gl, 2, _calcPressureProgram.uniform('cellBeginEndTex'), _cellBeginEndFBO.texture('cellBeginEnd'));
@@ -416,6 +422,8 @@ const _updateParticles = () => {
     _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse_strength'), _containerKinematics.reverseImpulseStrength);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse_age'), _containerKinematics.reverseImpulseAge);
     _gl.uniform2f(_updateParticlesProgram.uniform('u_reverse_delta_v'), _containerKinematics.reverseDeltaV.x, _containerKinematics.reverseDeltaV.y);
+    _gl.uniform2f(_updateParticlesProgram.uniform('u_flask_half_size'), _flaskShape.boxHalfSize.x, _flaskShape.boxHalfSize.y);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_flask_radius'), _flaskShape.radius);
     GLU.bindTextureUniform(_gl, 0, _updateParticlesProgram.uniform('posTex'),          _posVelReadFBO.texture('posVelh'));
     GLU.bindTextureUniform(_gl, 1, _updateParticlesProgram.uniform('intPosTex'),       _posVelReadFBO.texture('intPos'));
     GLU.bindTextureUniform(_gl, 2, _updateParticlesProgram.uniform('velTex'),          _calcPressureFBO.texture('tex'));
@@ -469,4 +477,11 @@ const _sortParticles = () => {
     _gl.drawArrays(_gl.POINTS, 0, _particleCount);
 
     [_posVelReadFBO, _posVelWriteFBO] = [_posVelWriteFBO, _posVelReadFBO];
+};
+
+export const setFlaskShape = ({ boxHalfSize, radius }) => {
+    _flaskShape = {
+        boxHalfSize: boxHalfSize ? new Vec2(boxHalfSize.x, boxHalfSize.y) : _flaskShape.boxHalfSize,
+        radius: radius ?? _flaskShape.radius,
+    };
 };

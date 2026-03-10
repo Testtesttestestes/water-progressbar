@@ -10,6 +10,8 @@ uniform vec2 u_container_pos;
 uniform float u_container_angle;
 uniform vec2 u_sim_min;
 uniform vec2 u_sim_size;
+uniform vec2 u_flask_half_size;
+uniform float u_flask_radius;
 
 out vec4 outColor;
 
@@ -58,8 +60,8 @@ void main() {
     }
 
     // Параметры формы (делаем чуть шире и "коробочнее" как в вёрстке)
-    vec2 boxSize = vec2(5.0, 1.5);
-    float boxRadius = 0.8;
+    vec2 boxSize = u_flask_half_size;
+    float boxRadius = u_flask_radius;
     
     float angle = u_container_angle;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
