@@ -28,7 +28,7 @@ export default function App() {
 
     {/* 2. Слой интерфейса — только маленькая плашка внизу */}
     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-10">
-      <div className="bg-black/40 backdrop-blur-md p-5 rounded-3xl border border-white/10 shadow-2xl">
+      <div className="max-h-[calc(100vh-3rem)] overflow-y-auto bg-black/40 backdrop-blur-md p-5 rounded-3xl border border-white/10 shadow-2xl">
         
         {/* Заголовок и описание в одну строку для экономии места */}
         <div className="flex justify-between items-end mb-4">
