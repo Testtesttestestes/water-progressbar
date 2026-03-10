@@ -30,7 +30,7 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Verify gravity slider is present in bundle
+      - name: Verify control sliders are present in bundle
         shell: bash
         run: |
           shopt -s nullglob
@@ -40,6 +40,8 @@ jobs:
             exit 1
           fi
           grep -n "Gravity" "${files[@]}"
+          grep -n "Flask Width" "${files[@]}"
+          grep -n "Flask Height" "${files[@]}"
 
       - name: Prepare release artifact
         run: |
