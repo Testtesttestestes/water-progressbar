@@ -269,7 +269,8 @@ void main(void) {
         // Shared tangential drift from flask motion makes the whole contact layer move together.
         vec2 wallTangent = vec2(-wallNormal.y, wallNormal.x);
         float wallSlip = dot(wallVel, wallTangent);
-        float cohesiveSlip = wallSlip * nearWallBlend * u_wave_amplitude * 0.35;
+        float sideWallFactor = smoothstep(0.55, 0.9, abs(normalLocal.x));
+        float cohesiveSlip = wallSlip * nearWallBlend * u_wave_amplitude * 0.35 * (1.0 - sideWallFactor);
 
         velh = wallVel + relVN * wallNormal + relVT + cohesiveSlip * wallTangent;
     }
