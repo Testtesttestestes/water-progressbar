@@ -78,6 +78,10 @@ float sdRoundedBox(vec2 p, vec2 b, float r) {
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
+float wallContactThickness() {
+    return max(dp, 0.08);
+}
+
 vec2 calcRoundedBoxNormal(vec2 p, vec2 b, float r) {
     vec2 e = vec2(0.01, 0.0);
     return normalize(vec2(
@@ -150,14 +154,15 @@ vec2 calcAcceleration() {
     mat2 invRot = transpose(rot);
     vec2 p = invRot * (pos_i - u_container_pos);
 
-    float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * dp;
+    float contactThickness = wallContactThickness();
+    float dist_iw = -sdRoundedBox(p, boxSize, boxRadius) + 0.5 * contactThickness;
     vec2 normalLocal = calcRoundedBoxNormal(p, boxSize, boxRadius);
     vec2 posDir = rot * normalLocal;
     if (dist_iw < kernelRadius) {
         vec2  accWKer = texture(accWallKerTex, vec2(dist_iw * rcplKernelRadius, 0.5)).xy;
         
         float pres  = max((pr_i.x + rho0 * dot(g, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
-        float repul = wallRepulsionScale * coefRepul * clamp(dp - dist_iw, 0.0, 0.5 * dp);
+        float repul = wallRepulsionScale * coefRepul * clamp(contactThickness - dist_iw, 0.0, 0.5 * contactThickness);
 
         vec2 r_local = pos_i - u_container_pos;
         vec2 wallVel = u_container_vel + vec2(-r_local.y, r_local.x) * u_container_ang_vel;
@@ -233,11 +238,12 @@ void main(void) {
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     mat2 invRot = transpose(rot);
     vec2 pLocal = invRot * (pos - u_container_pos);
-    float dist_iw = -sdRoundedBox(pLocal, boxSize, boxRadius) + 0.5 * dp;
+    float contactThickness = wallContactThickness();
+    float dist_iw = -sdRoundedBox(pLocal, boxSize, boxRadius) + 0.5 * contactThickness;
     vec2 normalLocal = calcRoundedBoxNormal(pLocal, boxSize, boxRadius);
     vec2 wallNormal = rot * normalLocal;
 
-    if (dist_iw < dp) {
+    if (dist_iw < contactThickness) {
         vec2 r_world = pos - u_container_pos;
         vec2 wallVel = u_container_vel + vec2(-r_world.y, r_world.x) * u_container_ang_vel;
         vec2 relVel = velh - wallVel;
@@ -252,7 +258,7 @@ void main(void) {
             relVN *= softClamp;
         }
 
-        float nearWallBlend = 1.0 - clamp(dist_iw / dp, 0.0, 1.0);
+        float nearWallBlend = 1.0 - clamp(dist_iw / contactThickness, 0.0, 1.0);
         float tangentialDamping = clamp(1.0 - wallTangentialFriction * dt * (0.7 + 0.3 * nearWallBlend), 0.0, 1.0);
         relVT *= tangentialDamping;
 
