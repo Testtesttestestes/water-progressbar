@@ -12,6 +12,8 @@ interface RealisticProgressBarProps {
   meshQuality?: 'high' | 'balanced' | 'low';
   particleScale?: number;
   gravityScale?: number;
+  flaskWidth?: number;
+  flaskHeight?: number;
 }
 
 
@@ -54,6 +56,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   meshQuality = 'low',
   particleScale = 1,
   gravityScale = 1,
+  flaskWidth = 10,
+  flaskHeight = 3,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef(progress);
@@ -65,6 +69,12 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   const smoothedTiltAngleRef = useRef(tiltAngle);
   const kinematicPrevRef = useRef<KinematicSample | null>(null);
   const reverseImpulseRef = useRef({ strength: 0.0, age: 1e6, deltaV: new Vec2(0, 0) });
+
+  const flaskHalfSize = {
+    x: Math.max(1.5, flaskWidth / 2),
+    y: Math.max(0.8, flaskHeight / 2),
+  };
+  const flaskRadius = Math.min(flaskHalfSize.x, flaskHalfSize.y) * 0.5;
 
   useEffect(() => {
     progressRef.current = progress;
@@ -125,13 +135,13 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
 
     const createParticlesRoundedBox = () => {
         let pos = [];
-        let boxSize = {x: 5.0, y: 1.5};
-        let boxRadius = 0.8;
+        let boxSize = flaskHalfSize;
+        let boxRadius = flaskRadius;
         
-        let minX = -7.5;
-        let maxX = 7.5;
-        let minY = -1.0;
-        let maxY = 5.0;
+        let minX = -flaskHalfSize.x - 2.0;
+        let maxX = flaskHalfSize.x + 2.0;
+        let minY = 3.0 - flaskHalfSize.y - 2.0;
+        let maxY = 3.0 + flaskHalfSize.y + 2.0;
         
         const sdRoundedBox = (px: number, py: number, bx: number, by: number, r: number) => {
             let qx = Math.abs(px) - bx + r;
@@ -159,6 +169,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
 
     const initAsync = async () => {
         SPH.setGravityScale(gravityScaleRef.current);
+        SPH.setFlaskShape({ boxHalfSize: flaskHalfSize, radius: flaskRadius });
         const bgUrl = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
         const [bgTex] = await Promise.all([
             GLU.loadTexture(gl, bgUrl),
@@ -249,7 +260,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
               reverseImpulseAge: reverseImpulseRef.current.age,
               reverseDeltaV: reverseImpulseRef.current.deltaV,
             });
-            Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current, pose.position, pose.angle);
+            Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current, pose.position, pose.angle, { boxHalfSize: new Vec2(flaskHalfSize.x, flaskHalfSize.y), radius: flaskRadius });
 
             for (let i = 0; i < 8; i++) SPH.step();
 
@@ -269,7 +280,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, [meshQuality, particleScale]);
+  }, [meshQuality, particleScale, flaskWidth, flaskHeight]);
 
   return (
     <canvas 

@@ -12,6 +12,8 @@ export default function App() {
   const [tiltAngle, setTiltAngle] = useState(0);
   const [particleScale, setParticleScale] = useState(1);
   const [gravityScale, setGravityScale] = useState(1);
+  const [flaskWidth, setFlaskWidth] = useState(10);
+  const [flaskHeight, setFlaskHeight] = useState(3);
 
   return (
   <div className="relative h-screen w-full overflow-hidden bg-gray-900">
@@ -23,6 +25,8 @@ export default function App() {
         tiltAngle={tiltAngle}
         particleScale={particleScale}
         gravityScale={gravityScale}
+        flaskWidth={flaskWidth}
+        flaskHeight={flaskHeight}
       />
     </div>
 
@@ -70,6 +74,38 @@ export default function App() {
             />
           </div>
 
+
+          <div>
+            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
+              <span>Flask Width</span>
+              <span>{flaskWidth.toFixed(1)}</span>
+            </div>
+            <input
+              type="range"
+              min="4"
+              max="18"
+              step="0.1"
+              value={flaskWidth}
+              onChange={(e) => setFlaskWidth(parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
+              <span>Flask Height</span>
+              <span>{flaskHeight.toFixed(1)}</span>
+            </div>
+            <input
+              type="range"
+              min="1.6"
+              max="10"
+              step="0.1"
+              value={flaskHeight}
+              onChange={(e) => setFlaskHeight(parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+          </div>
           <div>
             <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
               <span>Tilt</span>
