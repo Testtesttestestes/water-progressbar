@@ -54,7 +54,7 @@ export default function App() {
             </div>
             <input
               type="range"
-              min="0.35"
+              min="0.1"
               max="1.5"
               step="0.01"
               value={particleScale}
