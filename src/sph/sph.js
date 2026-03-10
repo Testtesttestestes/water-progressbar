@@ -26,7 +26,8 @@ import sortparticlesFrag from './sortparticles.frag?raw';
 let _gl;
 
 const _gravity       = new Vec2(0, -10);
-let _gravityScale    = 1.0;
+let _gravityScale    = 2.0;
+const _gravityScaleNormalization = 2.0;
 const _rho0          = 1; //1000だと圧力が半精度では表現できなくなるので適当な値にする
 const _viscosity     = 0.18 * _rho0;
 const _surfTension   = 2;
@@ -191,7 +192,7 @@ export const setAnimationParams = (time, waveAmplitude) => {
 };
 
 export const setGravityScale = (scale) => {
-    _gravityScale = Math.max(0, scale);
+    _gravityScale = Math.max(0, scale) * _gravityScaleNormalization;
 };
 
 export const setContainerKinematics = (kinematics) => {
