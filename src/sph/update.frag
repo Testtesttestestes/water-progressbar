@@ -79,7 +79,7 @@ float sdRoundedBox(vec2 p, vec2 b, float r) {
 }
 
 float wallContactThickness() {
-    return max(dp, 0.08);
+    return max(dp * 0.7, 0.05);
 }
 
 vec2 calcRoundedBoxNormal(vec2 p, vec2 b, float r) {
@@ -160,6 +160,7 @@ vec2 calcAcceleration() {
     vec2 posDir = rot * normalLocal;
     if (dist_iw < kernelRadius) {
         vec2  accWKer = texture(accWallKerTex, vec2(dist_iw * rcplKernelRadius, 0.5)).xy;
+        float sideWallFactor = smoothstep(0.6, 0.95, abs(normalLocal.x));
         
         float pres  = max((pr_i.x + rho0 * dot(g, dist_iw * posDir)) * pr_i.y * rcplRho0, 0.0);
         float repul = wallRepulsionScale * coefRepul * clamp(contactThickness - dist_iw, 0.0, 0.5 * contactThickness);
@@ -170,9 +171,12 @@ vec2 calcAcceleration() {
         float relN   = dot(relVel, posDir);
         vec2 relT    = relVel - relN * posDir;
 
-        vec2 viscWall = (-wallNormalViscScale * relN * posDir - wallTangentialViscScale * relT)
+        float sideTangentialScale = mix(1.0, 0.35, sideWallFactor);
+        float sidePressureScale = mix(1.0, 0.65, sideWallFactor);
+
+        vec2 viscWall = (-wallNormalViscScale * relN * posDir - wallTangentialViscScale * sideTangentialScale * relT)
                       * coefViscosity * pr_i.y * rcplRho0 * accWKer.y;
-        acc_i += (pres * accWKer.x - repul) * posDir + viscWall;
+        acc_i += (sidePressureScale * pres * accWKer.x - repul) * posDir + viscWall;
     }
 
     vec2 r_world = pos_i - u_container_pos;
@@ -265,7 +269,7 @@ void main(void) {
         // Shared tangential drift from flask motion makes the whole contact layer move together.
         vec2 wallTangent = vec2(-wallNormal.y, wallNormal.x);
         float wallSlip = dot(wallVel, wallTangent);
-        float cohesiveSlip = wallSlip * nearWallBlend;
+        float cohesiveSlip = wallSlip * nearWallBlend * u_wave_amplitude * 0.35;
 
         velh = wallVel + relVN * wallNormal + relVT + cohesiveSlip * wallTangent;
     }
