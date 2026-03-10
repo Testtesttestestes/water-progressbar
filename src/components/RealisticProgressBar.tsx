@@ -109,8 +109,14 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     }
 
     const dp = 8 / 64;
-    const fluidDomainR = 11.4;
     const boxRadius = 0.8;
+
+    // 1. ВЫЧИСЛЕНИЕ ДИНАМИЧЕСКИХ ГРАНИЦ ДЛЯ WEBGL (Чтобы вода никогда не обрезалась)
+    // Считаем диагональ колбы от её центра. Это максимальное расстояние, на которое могут улететь частицы при повороте.
+    const maxRadius = Math.sqrt(Math.pow(flaskWidth / 2, 2) + Math.pow(flaskHeight / 2, 2));
+    const safeMargin = 4.0; // Запас для волн и брызг
+    const simMaxBound = maxRadius + safeMargin;
+    const fluidDomainR = simMaxBound * 1.5; // Скрытые границы физики SPH
 
     const createParticlesRoundedBox = () => {
       const pos = [];
@@ -146,9 +152,16 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     const initAsync = async () => {
       await Promise.all([SPH.loadShaderFilesAsync(), Renderer.loadShaderFilesAsync()]);
 
+      // Инициализируем SPH с динамической границей физики
       SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
       SPH.setContainerSize(new Vec2(flaskWidth, flaskHeight));
-      Renderer.init(gl, canvas, dp, new Vec2(-10), new Vec2(10), {
+
+      // 2. ИСПРАВЛЕНИЕ "ПУСТОТЫ" (CLIPPING)
+      // Инициализируем рендер с запасом, перекрывающим любые повороты
+      const simMin = new Vec2(-simMaxBound, 3.0 - simMaxBound);
+      const simMax = new Vec2(simMaxBound, 3.0 + simMaxBound);
+
+      Renderer.init(gl, canvas, dp, simMin, simMax, {
         meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
       });
       Renderer.setContainerSize(new Vec2(flaskWidth, flaskHeight));
@@ -166,13 +179,21 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         }
 
         const aspect = canvas.clientWidth / canvas.clientHeight;
-        const margin = 1.35;
-        const viewHeight = flaskHeight * margin;
-        const viewWidth = viewHeight * aspect;
+
+        // Камера охватывает область так, чтобы вместить всю диагональ колбы
+        const viewTargetSize = (maxRadius + 1.0) * 2;
+        let viewW = viewTargetSize;
+        let viewH = viewTargetSize;
+
+        if (aspect > 1) {
+          viewW = viewH * aspect;
+        } else {
+          viewH = viewW / aspect;
+        }
 
         Renderer.setRenderingSimulationArea(
-          new Vec2(-viewWidth / 2, 3.0 - viewHeight / 2),
-          new Vec2(viewWidth / 2, 3.0 + viewHeight / 2),
+          new Vec2(-viewW / 2, 3.0 - viewH / 2),
+          new Vec2(viewW / 2, 3.0 + viewH / 2),
         );
 
         const targetAmplitude = isWavingRef.current ? 1.0 : 0.0;
@@ -187,16 +208,29 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         const pose = getContainerPose(timeRef.current, waveAmplitudeRef.current);
         pose.angle += smoothedTiltAngleRef.current;
 
+        // 3. ПИКСЕЛЬНАЯ СИНХРОНИЗАЦИЯ КОЛБЫ (Как вы и предлагали)
         if (glassRef.current) {
-          const scaleY = canvas.clientHeight / viewHeight;
-          const pxOffsetX = pose.position.x * scaleY;
-          const degAngle = pose.angle * (180 / Math.PI);
-          const pxRadius = boxRadius * scaleY;
+          // Высчитываем сколько пикселей помещается в 1 юните симуляции
+          const scale = canvas.clientHeight / viewH;
 
-          glassRef.current.style.transform = `translate(${pxOffsetX}px, 0px) rotate(${-degAngle}deg)`;
-          glassRef.current.style.width = `${(flaskWidth / viewWidth) * 100}%`;
-          glassRef.current.style.height = `${(flaskHeight / viewHeight) * 100}%`;
+          // Строгие размеры в пикселях, чтобы вращение не ломало пропорции
+          const pxWidth = flaskWidth * scale;
+          const pxHeight = flaskHeight * scale;
+          const pxRadius = boxRadius * scale;
+
+          const pxOffsetX = pose.position.x * scale;
+          // Позиция Y зафиксирована на 3.0, но если она будет анимироваться - стекло последует за ней
+          const pxOffsetY = (3.0 - pose.position.y) * scale;
+
+          const degAngle = pose.angle * (180 / Math.PI);
+
+          glassRef.current.style.width = `${pxWidth}px`;
+          glassRef.current.style.height = `${pxHeight}px`;
           glassRef.current.style.borderRadius = `${pxRadius}px`;
+
+          // will-change помогает аппаратному ускорению избежать подёргиваний
+          glassRef.current.style.willChange = 'transform';
+          glassRef.current.style.transform = `translate(${pxOffsetX}px, ${pxOffsetY}px) rotate(${-degAngle}deg)`;
         }
 
         const prev = kinematicPrevRef.current;
