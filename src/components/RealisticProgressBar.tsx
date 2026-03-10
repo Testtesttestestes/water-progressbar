@@ -10,6 +10,7 @@ interface RealisticProgressBarProps {
   tiltAngle?: number;
   className?: string;
   meshQuality?: 'high' | 'balanced' | 'low';
+  particleScale?: number;
 }
 
 
@@ -50,6 +51,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   tiltAngle = 0,
   className,
   meshQuality = 'low',
+  particleScale = 1,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef(progress);
@@ -108,7 +110,9 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     }
 
     const R0 = 12;
-    const dp = 8 / 64;
+    const baseDp = 8 / 64;
+    const safeParticleScale = Math.max(0.35, particleScale);
+    const dp = baseDp * safeParticleScale;
     const fluidDomainR = 0.95 * R0;
 
     const createParticlesRoundedBox = () => {
@@ -256,7 +260,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, []);
+  }, [meshQuality, particleScale]);
 
   return (
     <canvas 

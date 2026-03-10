@@ -10,12 +10,13 @@ export default function App() {
   const [progress, setProgress] = useState(0.5);
   const [isWaving, setIsWaving] = useState(false);
   const [tiltAngle, setTiltAngle] = useState(0);
+  const [particleScale, setParticleScale] = useState(1);
 
   return (
   <div className="relative h-screen w-full overflow-hidden bg-gray-900">
     {/* 1. Слой с водой (Канвас) — занимает весь экран на заднем плане */}
     <div className="absolute inset-0 z-0">
-      <RealisticProgressBar progress={progress} isWaving={isWaving} tiltAngle={tiltAngle} />
+      <RealisticProgressBar progress={progress} isWaving={isWaving} tiltAngle={tiltAngle} particleScale={particleScale} />
     </div>
 
     {/* 2. Слой интерфейса — только маленькая плашка внизу */}
@@ -44,6 +45,23 @@ export default function App() {
             onChange={(e) => setProgress(parseFloat(e.target.value))}
             className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
           />
+
+
+          <div>
+            <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
+              <span>Particle Scale</span>
+              <span>{particleScale.toFixed(2)}x</span>
+            </div>
+            <input
+              type="range"
+              min="0.35"
+              max="1.5"
+              step="0.01"
+              value={particleScale}
+              onChange={(e) => setParticleScale(parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+          </div>
 
           <div>
             <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
