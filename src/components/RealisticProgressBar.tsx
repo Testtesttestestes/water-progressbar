@@ -165,7 +165,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     };
 
     let animationFrameId: number;
-    let lastTime = performance.now();
+    let isDisposed = false;
+    let lastTime: number | null = null;
 
     const initAsync = async () => {
         SPH.setGravityScale(gravityScaleRef.current);
@@ -176,6 +177,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
             SPH.loadShaderFilesAsync(), 
             Renderer.loadShaderFilesAsync()
         ]);
+
+        if (isDisposed) return;
         
         Renderer.setBackgroundTexture(bgTex);
         SPH.init(gl, dp, fluidDomainR, createParticlesRoundedBox());
@@ -183,8 +186,17 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
           meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
         });
         Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
+        kinematicPrevRef.current = null;
+        reverseImpulseRef.current = { strength: 0.0, age: 1e6, deltaV: new Vec2(0, 0) };
+        lastTime = null;
 
         const loop = (currentTime: number) => {
+            if (isDisposed) return;
+
+            if (lastTime === null) {
+              lastTime = currentTime;
+            }
+
             const dt = (currentTime - lastTime) / 1000;
             lastTime = currentTime;
 
@@ -274,6 +286,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     initAsync();
 
     return () => {
+        isDisposed = true;
         if (animationFrameId) {
             cancelAnimationFrame(animationFrameId);
         }
