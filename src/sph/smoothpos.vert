@@ -18,6 +18,9 @@ uniform usampler2D cellBeginEndTex;
 
 out vec2 vPos;
 
+// Маркер неактивной частицы (см. initparticles.frag).
+const int INACTIVE = -32768;
+
 vec2 idx2uv(in float idx, in vec4 tsizeOfs) {
     float y;
     float x = modf(idx * tsizeOfs.x + tsizeOfs.z, y);
@@ -34,7 +37,13 @@ void main(void) {
     gl_Position  = vec4(uv * 2.0 - 1.0, 0, 1);
     gl_PointSize = 1.0;
 
-    vec2  pos_i  = vec2(texture(intPosTex, uv).xy) * toFloatPos;
+    ivec2 ipos_i = texture(intPosTex, uv).xy;
+    if (ipos_i.x == INACTIVE) {
+        // Неактивные частицы не входят в cellBeginEnd и не рисуются.
+        vPos = vec2(ipos_i) * toFloatPos;
+        return;
+    }
+    vec2  pos_i  = vec2(ipos_i) * toFloatPos;
     vec2  cell_i = floor((pos_i - cellOrigin) * rcplCellSize);
     vec3  wx_i   = vec3(0);
     float smoothRadiusSq = smoothRadius * smoothRadius;

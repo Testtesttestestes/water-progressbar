@@ -17,6 +17,7 @@ import weightedcenterFrag from './weightedcenter.frag?raw';
 import distancefieldFrag from './distancefield.frag?raw';
 import msFrag from './ms.frag?raw';
 import inittableFrag from './inittable.frag?raw';
+import blurFrag from './blur.frag?raw';
 
 let _gl;
 let _canvas;
@@ -35,7 +36,8 @@ const _fragSources = [
     weightedcenterFrag,
     distancefieldFrag,
     msFrag,
-    inittableFrag
+    inittableFrag,
+    blurFrag
 ];
 
 let _backgroundProgram;
@@ -45,10 +47,12 @@ let _weightedCenterProgram;
 let _distanceFieldProgram;
 let _marchingSquaresProgram;
 let _initTableProgram;
+let _blurProgram;
 
 let _smoothPosFBO;
 let _weightedCenterFBO;
 let _distanceFieldFBO;
+let _blurTempFBO;
 
 let _tabelTex;
 let _bgTex;
@@ -86,6 +90,7 @@ export const init = (gl, canvas, meshSize, meshingAreaMin, meshingAreaMax, { mes
         return new Vec2(rx, ry);
     })();
 
+    removeEventListener('resize', _calcSimToClip);
     addEventListener('resize', _calcSimToClip);
 
     _createPrograms();
@@ -146,8 +151,24 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
 
     _distanceFieldProgram.use();
     _distanceFieldFBO.bind();
-    _gl.uniform1f(_distanceFieldProgram.uniform('particleRadius'), dp * 8.5);
+    // Радиус частицы для поверхности по Zhu & Bridson: порядка шага частиц.
+    // Прежние 8.5·dp были больше радиуса сглаживания (3·dp), и водой считалась
+    // любая точка рядом хоть с одной частицей — граница выходила бинарной и рваной.
+    _gl.uniform1f(_distanceFieldProgram.uniform('particleRadius'), dp * 1.5);
     GLU.bindTextureUniform(_gl, 0, _distanceFieldProgram.uniform('weightedCenterTex'), _weightedCenterFBO.texture('tex'));
+    _gl.drawArrays(_gl.TRIANGLES, 0, 3);
+
+    // Сглаживание поверхности: σ ≈ 1.2 шага частиц, независимо от качества сетки.
+    const sigma = Math.min(1.2 * dp / _cellSize, 3.0);
+    _blurProgram.use();
+    _gl.uniform1f(_blurProgram.uniform('sigma'), sigma);
+    _blurTempFBO.bind();
+    _gl.uniform2f(_blurProgram.uniform('direction'), 1, 0);
+    GLU.bindTextureUniform(_gl, 0, _blurProgram.uniform('srcTex'), _distanceFieldFBO.texture('tex'));
+    _gl.drawArrays(_gl.TRIANGLES, 0, 3);
+    _distanceFieldFBO.bind();
+    _gl.uniform2f(_blurProgram.uniform('direction'), 0, 1);
+    GLU.bindTextureUniform(_gl, 0, _blurProgram.uniform('srcTex'), _blurTempFBO.texture('tex'));
     _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 
     _gl.bindFramebuffer(_gl.DRAW_FRAMEBUFFER, null);
@@ -199,6 +220,7 @@ const _createPrograms = () => {
     _distanceFieldProgram   = create(_vertSources[0], _fragSources[4], null, null, ['MarchingSquares']);
     _marchingSquaresProgram = create(_vertSources[0], _fragSources[5], null, null, []);
     _initTableProgram       = create(_vertSources[4], _fragSources[6], [0], [1]);
+    _blurProgram            = create(_vertSources[0], _fragSources[7]);
 };
 
 const _createFBOs = () => {
@@ -206,6 +228,10 @@ const _createFBOs = () => {
     _smoothPosFBO      = create(new Vec2(1), [['tex', 'RG16I'  ]]);
     _weightedCenterFBO = create(_resolution, [['tex', 'RGBA16F']]);
     _distanceFieldFBO  = create(_resolution, [['tex', 'R16F']]);
+    _blurTempFBO       = create(_resolution, [['tex', 'R16F']]);
+    // Финальный шейдер семплирует поле расстояний попиксельно: с NEAREST поверхность
+    // воды получалась «лесенкой». R16F фильтруется линейно без расширений.
+    GLU.setLinearFilter(_gl, _distanceFieldFBO.texture('tex'));
 };
 
 const _initTableTex = () => {

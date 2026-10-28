@@ -15,7 +15,15 @@ layout(std140) uniform Subcell {
     vec2 rcplSubcellSize;
 };
 
+// Маркер неактивной частицы (см. initparticles.frag).
+const int INACTIVE = -32768;
+
 uniform float particleCount;
+// Активны частицы в слотах [0, activeCount): после сортировки они снова займут
+// эти слоты (снизу вверх по ячейкам). Неактивные лежат в хвосте [activeCount, N)
+// и остаются на своём слоте. Так каждый слот записывается ровно один раз
+// и не остаётся «устаревших» копий частиц.
+uniform float activeCount;
 uniform sampler2D scanTex;
 uniform isampler2D subcellTex;
 uniform sampler2D indexTex;
@@ -47,13 +55,21 @@ vec2 idx2uv(in float idx) {
 void main(void) {
     float idx = float(gl_VertexID);
     vOldUV = idx2uv(idx);
-    vec2  pos = vec2(texture(intPosTex, vOldUV).xy) * toFloatPos;
+    ivec2 ipos = texture(intPosTex, vOldUV).xy;
+    if (ipos.x == INACTIVE) {
+        gl_Position  = vec4(vOldUV * 2.0 - 1.0, 0, 1);
+        gl_PointSize = 1.0;
+        return;
+    }
+    vec2  pos = vec2(ipos) * toFloatPos;
     ivec2 cell = ivec2(floor((pos - cellOrigin) * rcplCellSize));
     ivec2 subcell = ivec2(floor((pos - sebcellOrigin) * rcplSubcellSize));
 
     float order = orderInsideCell(idx, cell, subcell);
     // 1回だけならサブセルに3粒子存在しても対応できる
-    float newIdx = order < 0.0 ? particleCount - 1.0 : floor(texelFetch(scanTex, cell, 0).x) + order;
+    // Если в подъячейке оказалось 3 частицы, лишняя занимает единственный свободный
+    // слот — последний из активных (неактивные занимают хвост массива).
+    float newIdx = order < 0.0 ? activeCount - 1.0 : floor(texelFetch(scanTex, cell, 0).x) + order;
     vec2  newUV  = idx2uv(newIdx);
     gl_Position  = vec4(newUV * 2.0 - 1.0, 0, 1);
     gl_PointSize = 1.0;
