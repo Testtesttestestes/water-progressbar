@@ -14,19 +14,9 @@ interface RealisticProgressBarProps {
   gravityScale?: number;
   flaskWidth?: number;
   flaskHeight?: number;
+  /** Скорость наполнения: доля полной колбы в секунду. */
+  fillSpeed?: number;
 }
-
-
-
-type KinematicSample = {
-  time: number;
-  pos: Vec2;
-  vel: Vec2;
-  acc: Vec2;
-  angle: number;
-  angVel: number;
-  angAcc: number;
-};
 
 const FLASK_MOTION = {
   offsetXAmp: 1.0,
@@ -35,11 +25,28 @@ const FLASK_MOTION = {
   angleFreq: 1.2,
 };
 
-const getContainerPose = (time: number, waveAmplitude: number) => {
-  const offsetX = Math.sin(time * FLASK_MOTION.offsetXFreq) * FLASK_MOTION.offsetXAmp * waveAmplitude;
-  const dynamicAngle = Math.sin(time * FLASK_MOTION.angleFreq) * FLASK_MOTION.angleAmp * waveAmplitude;
-  const angle = dynamicAngle;
-  return { position: new Vec2(offsetX, 3.0), angle };
+const FLASK_CENTER_Y = 3.0;
+// Время выхода раскачивания на полную амплитуду и обратно, с.
+const WAVE_RAMP_TIME = 0.6;
+const TILT_SMOOTHING_TIME = 0.18;
+// Не больше стольких шагов за кадр: на медленной машине симуляция замедляется,
+// но остаётся согласованной, а не «догоняет» всё более длинными кадрами.
+const MAX_STEPS_PER_FRAME = 12;
+
+// Поза колбы и её скорости в момент t (аналитически, без конечных разностей).
+const getContainerKinematics = (t: number, waveAmplitude: number, tilt: number, tiltVelocity: number) => {
+  const wx = FLASK_MOTION.offsetXFreq;
+  const wa = FLASK_MOTION.angleFreq;
+  const offsetX = Math.sin(t * wx) * FLASK_MOTION.offsetXAmp * waveAmplitude;
+  const velX = Math.cos(t * wx) * wx * FLASK_MOTION.offsetXAmp * waveAmplitude;
+  const angle = Math.sin(t * wa) * FLASK_MOTION.angleAmp * waveAmplitude + tilt;
+  const angularVelocity = Math.cos(t * wa) * wa * FLASK_MOTION.angleAmp * waveAmplitude + tiltVelocity;
+  return {
+    position: new Vec2(offsetX, FLASK_CENTER_Y),
+    velocity: new Vec2(velX, 0),
+    angle,
+    angularVelocity,
+  };
 };
 
 const MESH_QUALITY_FACTORS: Record<NonNullable<RealisticProgressBarProps['meshQuality']>, number> = {
@@ -58,6 +65,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   gravityScale = 1,
   flaskWidth = 10,
   flaskHeight = 3,
+  fillSpeed = 0.35,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef(progress);
@@ -67,8 +75,6 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   const tiltAngleRef = useRef(tiltAngle);
   const gravityScaleRef = useRef(gravityScale);
   const smoothedTiltAngleRef = useRef(tiltAngle);
-  const kinematicPrevRef = useRef<KinematicSample | null>(null);
-  const reverseImpulseRef = useRef({ strength: 0.0, age: 1e6, deltaV: new Vec2(0, 0) });
 
   const flaskHalfSize = {
     x: Math.max(1.5, flaskWidth / 2),
@@ -93,6 +99,10 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     gravityScaleRef.current = gravityScale;
     SPH.setGravityScale(gravityScale);
   }, [gravityScale]);
+
+  useEffect(() => {
+    SPH.setFillSpeed(fillSpeed);
+  }, [fillSpeed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -172,8 +182,10 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         SPH.setGravityScale(gravityScaleRef.current);
         SPH.setFlaskShape({ boxHalfSize: flaskHalfSize, radius: flaskRadius });
         const bgUrl = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
+        // Без сети картинка не загрузится — тогда рисуем на запасном градиенте,
+        // а не оставляем пустой холст.
         const [bgTex] = await Promise.all([
-            GLU.loadTexture(gl, bgUrl),
+            GLU.loadTexture(gl, bgUrl).catch(() => GLU.createFallbackBackground(gl)),
             SPH.loadShaderFilesAsync(), 
             Renderer.loadShaderFilesAsync()
         ]);
@@ -186,9 +198,9 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
           meshSizeQualityFactor: MESH_QUALITY_FACTORS[meshQuality],
         });
         Renderer.setRenderingSimulationArea(new Vec2(-R0), new Vec2(R0));
-        kinematicPrevRef.current = null;
-        reverseImpulseRef.current = { strength: 0.0, age: 1e6, deltaV: new Vec2(0, 0) };
         lastTime = null;
+        let simAccumulator = 0;
+        const simDt = SPH.timeStep();
 
         const loop = (currentTime: number) => {
             if (isDisposed) return;
@@ -209,72 +221,38 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
                 canvas.height = displayHeight;
             }
 
-            const targetAmplitude = isWavingRef.current ? 1.0 : 0.0;
-            waveAmplitudeRef.current += (targetAmplitude - waveAmplitudeRef.current) * 0.05;
-            timeRef.current += dt;
-
-            const tiltSmoothingTime = 0.18;
-            const tiltLerp = 1.0 - Math.exp(-Math.max(dt, 0) / tiltSmoothingTime);
-            smoothedTiltAngleRef.current += (tiltAngleRef.current - smoothedTiltAngleRef.current) * tiltLerp;
-
-            const safeDt = Math.max(dt, 1e-4);
-            const pose = getContainerPose(timeRef.current, waveAmplitudeRef.current);
-            pose.angle += smoothedTiltAngleRef.current;
-            const prev = kinematicPrevRef.current;
-
-            let velocity = new Vec2(0, 0);
-            let acceleration = new Vec2(0, 0);
-            let angularVelocity = 0.0;
-            let angularAcceleration = 0.0;
-
-            if (prev) {
-              velocity = Vec2.mul(1 / safeDt, Vec2.sub(pose.position, prev.pos));
-              angularVelocity = (pose.angle - prev.angle) / safeDt;
-
-              acceleration = Vec2.mul(1 / safeDt, Vec2.sub(velocity, prev.vel));
-              angularAcceleration = (angularVelocity - prev.angVel) / safeDt;
-
-              const speedSignPrev = Math.sign(prev.vel.x);
-              const speedSignCurr = Math.sign(velocity.x);
-              const hasReverse = speedSignPrev !== 0 && speedSignCurr !== 0 && speedSignPrev !== speedSignCurr;
-              if (hasReverse) {
-                const deltaV = Vec2.sub(velocity, prev.vel);
-                reverseImpulseRef.current = {
-                  strength: Vec2.length(deltaV),
-                  age: 0.0,
-                  deltaV,
-                };
-              }
+            // Реальное время → время симуляции. Каждый шаг двигает колбу ровно на simDt,
+            // поэтому скорость стенок, которую видит вода, совпадает с их реальным
+            // смещением — даже если кадр пришёл с опозданием.
+            simAccumulator += Math.min(Math.max(dt, 0), 0.1);
+            let steps = Math.floor(simAccumulator / simDt);
+            if (steps > MAX_STEPS_PER_FRAME) {
+              steps = MAX_STEPS_PER_FRAME;
+              simAccumulator = 0;
+            } else {
+              simAccumulator -= steps * simDt;
             }
 
-            reverseImpulseRef.current.age += safeDt;
+            const targetAmplitude = isWavingRef.current ? 1.0 : 0.0;
+            const waveLerp = 1.0 - Math.exp(-simDt / WAVE_RAMP_TIME);
+            const tiltLerp = 1.0 - Math.exp(-simDt / TILT_SMOOTHING_TIME);
 
-            const sample: KinematicSample = {
-              time: timeRef.current,
-              pos: pose.position,
-              vel: velocity,
-              acc: acceleration,
-              angle: pose.angle,
-              angVel: angularVelocity,
-              angAcc: angularAcceleration,
-            };
-            kinematicPrevRef.current = sample;
+            let kin = getContainerKinematics(timeRef.current, waveAmplitudeRef.current, smoothedTiltAngleRef.current, 0);
+            for (let i = 0; i < steps; i++) {
+              timeRef.current += simDt;
+              waveAmplitudeRef.current += (targetAmplitude - waveAmplitudeRef.current) * waveLerp;
+              const tiltError = tiltAngleRef.current - smoothedTiltAngleRef.current;
+              smoothedTiltAngleRef.current += tiltError * tiltLerp;
+              // Скорость экспоненциального сглаживания: dθ/dt = (цель − θ) / τ.
+              const tiltVelocity = (tiltAngleRef.current - smoothedTiltAngleRef.current) / TILT_SMOOTHING_TIME;
 
-            SPH.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
-            SPH.setContainerKinematics({
-              position: pose.position,
-              velocity,
-              acceleration,
-              angle: pose.angle,
-              angularVelocity,
-              angularAcceleration,
-              reverseImpulseStrength: reverseImpulseRef.current.strength,
-              reverseImpulseAge: reverseImpulseRef.current.age,
-              reverseDeltaV: reverseImpulseRef.current.deltaV,
-            });
-            Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current, pose.position, pose.angle, { boxHalfSize: new Vec2(flaskHalfSize.x, flaskHalfSize.y), radius: flaskRadius });
+              kin = getContainerKinematics(timeRef.current, waveAmplitudeRef.current, smoothedTiltAngleRef.current, tiltVelocity);
+              SPH.setAnimationParams(timeRef.current, waveAmplitudeRef.current);
+              SPH.setContainerKinematics(kin);
+              SPH.step();
+            }
 
-            for (let i = 0; i < 8; i++) SPH.step();
+            Renderer.setAnimationParams(timeRef.current, waveAmplitudeRef.current, kin.position, kin.angle, { boxHalfSize: new Vec2(flaskHalfSize.x, flaskHalfSize.y), radius: flaskRadius });
 
             SPH.visualize(Renderer.renderWater);
 

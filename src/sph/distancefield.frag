@@ -51,14 +51,16 @@ void main(void) {
         f = g * (g*g - 3.0*g + 3.0);
     }
 
+    // Поле нормировано на радиус частицы и ограничено [-1, 1]: при линейной
+    // фильтрации ноль тогда проходит между текселями плавно. Раньше пустые тексели
+    // получали 1000, и граница воды прилипала к сетке текселей («лесенка»).
     vec3 wr_i = texelFetch(weightedCenterTex, node, 0).xyz;
     if (wr_i.z == 0.0) {
-        oDistance = 1000.0;
+        oDistance = 1.0;
     } else if (wr_i.z >= 15.0) {
         oDistance = -1.0;
     } else {
         vec2 pos = vec2(node) * msCellSize + msCellOrigin;
-        oDistance = length(pos - wr_i.xy) - f * particleRadius;
-        oDistance /= particleRadius;
+        oDistance = clamp((length(pos - wr_i.xy) - f * particleRadius) / particleRadius, -1.0, 1.0);
     }
 }

@@ -8,6 +8,7 @@ layout(location = 2) in vec2 velh;
 out vec2 vPos;
 out vec2 vVel;
 out vec2 vVelh;
+flat out float vSlot;
 
 vec2 uv() {
     float y;
@@ -19,6 +20,9 @@ void main(void) {
     vPos  = pos;
     vVel  = vel;
     vVelh = velh;
+    // Частицы заранее упорядочены снизу вверх, поэтому первые activeCount слотов —
+    // нижний слой воды.
+    vSlot = float(gl_VertexID);
     gl_Position = vec4(uv() * 2.0 - 1.0, 0, 1);
     gl_PointSize = 1.0;
 }

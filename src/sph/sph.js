@@ -92,7 +92,15 @@ let _is1stStep = true;
 let _pointerPos = Vec2.zero();
 let _pointerVel = Vec2.zero();
 
+// Наполнение. Активны частицы в слотах [0, _activeCount); _activeCount плавно идёт к цели.
 let _progress = 1.0;
+let _activeCount = 0;
+let _fillAccumulator = 0;
+let _fillSpeed = 0.35;          // доля полной колбы в секунду симуляции при наполнении
+const _drainSpeedFactor = 2.0;  // слив быстрее наполнения
+const _maxSpawnPerStep = 6;     // не больше стольких новых частиц за шаг: без «залпов»
+let _spawnLine = { x0: -1, x1: 1, y: 0 };
+let _fillGeometry = null;
 let _flaskShape = {
     boxHalfSize: new Vec2(5.0, 1.5),
     radius: 0.8,
@@ -140,8 +148,16 @@ export const init = (gl, particleSpacing, fluidDomainRadius, posArray) => {
     _gl = gl;
     _dp = particleSpacing;
     _fluidDomainRadius = fluidDomainRadius;
+    _is1stStep = true;
+    _fillAccumulator = 0;
+    _fillGeometry = null;
+
+    // Начальный слот частицы = её место в этом массиве. Сортируем снизу вверх,
+    // чтобы первые activeCount частиц образовали нижний слой воды.
+    posArray = _sortBottomToTop(posArray);
 
     _particleCount = posArray.length / 2;
+    _activeCount = _targetActiveCount();
     console.log(`${_particleCount} particles`);
 
     _initParams();
@@ -160,8 +176,10 @@ export const init = (gl, particleSpacing, fluidDomainRadius, posArray) => {
 export const step = () => {
     if (_is1stStep)
         _is1stStep = false;
-    else
+    else {
+        _advanceFill();
         _updateParticles();
+    }
 
     _sortParticles();
 
@@ -186,9 +204,20 @@ export const visualize = (callback) => {
     );
 };
 
+// Целевая доля наполнения 0..1. Вода доходит до неё плавно, со скоростью _fillSpeed.
 export const injectWater = (volumeRatio) => {
-    _progress = volumeRatio;
+    _progress = Math.min(Math.max(volumeRatio, 0), 1);
 };
+
+export const setFillSpeed = (fractionPerSecond) => {
+    _fillSpeed = Math.max(fractionPerSecond, 0.01);
+};
+
+// Длительность одного шага симуляции (секунды симуляции).
+export const timeStep = () => _dt;
+
+// Текущая доля активных частиц (то, что видно в колбе), 0..1.
+export const currentFill = () => (_particleCount ? _activeCount / _particleCount : 0);
 
 export const setAnimationParams = (time, waveAmplitude) => {
     _time = time;
@@ -207,6 +236,129 @@ export const setContainerKinematics = (kinematics) => {
 };
 
 const _scaledGravity = () => Vec2.mul(_gravityScale, _gravity);
+
+const _targetActiveCount = () => Math.round(_progress * _particleCount);
+
+const _sortBottomToTop = (posArray) => {
+    let idx = [...Array(posArray.length / 2).keys()];
+    idx.sort((a, b) => (posArray[2*a+1] - posArray[2*b+1]) || (posArray[2*a] - posArray[2*b]));
+    let sorted = new Array(posArray.length);
+    idx.forEach((src, dst) => { sorted[2*dst] = posArray[2*src]; sorted[2*dst+1] = posArray[2*src+1]; });
+    return sorted;
+};
+
+// Сдвигает _activeCount к цели не больше чем на _maxSpawnPerStep за шаг.
+const _advanceFill = () => {
+    const target = _targetActiveCount();
+    if (target === _activeCount) {
+        _fillAccumulator = 0;
+        return;
+    }
+    const filling = target > _activeCount;
+    const speed = _fillSpeed * (filling ? 1 : _drainSpeedFactor);
+    _fillAccumulator += speed * _particleCount * _dt;
+    const delta = Math.min(Math.floor(_fillAccumulator), _maxSpawnPerStep, Math.abs(target - _activeCount));
+    if (delta <= 0)
+        return;
+    _fillAccumulator -= delta;
+    _activeCount += filling ? delta : -delta;
+    if (filling)
+        _spawnLine = _computeSpawnLine(_activeCount);
+};
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// Геометрия наполнения: на какой высоте окажется поверхность воды для N частиц
+// при текущем положении колбы. Нужна, чтобы новые частицы рождались у поверхности,
+// а не падали струёй из-под потолка.
+
+const _sdRoundedBox = (px, py, bx, by, r) => {
+    const qx = Math.abs(px) - bx + r;
+    const qy = Math.abs(py) - by + r;
+    return Math.min(Math.max(qx, qy), 0) + Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - r;
+};
+
+// SDF колбы в мировых координатах, сжатой внутрь на inset.
+const _flaskSdfWorld = (x, y, inset) => {
+    const { position, angle } = _containerKinematics;
+    const c = Math.cos(angle), s = Math.sin(angle);
+    const dx = x - position.x, dy = y - position.y;
+    const lx = c * dx + s * dy, ly = -s * dx + c * dy;
+    return _sdRoundedBox(lx, ly, _flaskShape.boxHalfSize.x, _flaskShape.boxHalfSize.y, _flaskShape.radius) + inset;
+};
+
+// Отрезок внутри колбы на горизонтали y (колба выпуклая, поэтому это один отрезок).
+const _flaskSpanAt = (y, inset, xMin, xMax) => {
+    let a = xMin, b = xMax;
+    for (let i = 0; i < 40; i++) {
+        const m1 = a + (b - a) / 3, m2 = b - (b - a) / 3;
+        if (_flaskSdfWorld(m1, y, inset) < _flaskSdfWorld(m2, y, inset)) b = m2; else a = m1;
+    }
+    const xc = 0.5 * (a + b);
+    if (_flaskSdfWorld(xc, y, inset) >= 0)
+        return null;
+    const root = (lo, hi, insideAtHi) => {
+        for (let i = 0; i < 30; i++) {
+            const m = 0.5 * (lo + hi);
+            if ((_flaskSdfWorld(m, y, inset) < 0) === insideAtHi) hi = m; else lo = m;
+        }
+        return 0.5 * (lo + hi);
+    };
+    return { x0: root(xMin, xc, true), x1: root(xc, xMax, false) };
+};
+
+const _poseKey = () => {
+    const { position, angle } = _containerKinematics;
+    return [position.x, position.y, angle, _flaskShape.boxHalfSize.x, _flaskShape.boxHalfSize.y, _flaskShape.radius];
+};
+
+const _getFillGeometry = () => {
+    const key = _poseKey();
+    if (_fillGeometry && _fillGeometry.key.every((v, i) => Math.abs(v - key[i]) < 2e-3))
+        return _fillGeometry;
+
+    const { position } = _containerKinematics;
+    const extent = Math.hypot(_flaskShape.boxHalfSize.x, _flaskShape.boxHalfSize.y) + _dp;
+    const yMin = position.y - extent, yMax = position.y + extent;
+    const xMin = position.x - extent, xMax = position.x + extent;
+    const bins = 128;
+    const dy = (yMax - yMin) / bins;
+    // Та же область, что заполняется частицами при инициализации (sd < -dp/2).
+    const inset = 0.5 * _dp;
+    const cumArea = new Float64Array(bins + 1);
+    for (let i = 0; i < bins; i++) {
+        const span = _flaskSpanAt(yMin + (i + 0.5) * dy, inset, xMin, xMax);
+        cumArea[i + 1] = cumArea[i] + (span ? (span.x1 - span.x0) * dy : 0);
+    }
+    _fillGeometry = { key, yMin, yMax, dy, bins, cumArea, xMin, xMax };
+    return _fillGeometry;
+};
+
+// Высота поверхности покоя для count частиц.
+const _restLevelFor = (count) => {
+    const geo = _getFillGeometry();
+    const total = geo.cumArea[geo.bins];
+    const target = total * Math.min(count / _particleCount, 1);
+    let i = 0;
+    while (i < geo.bins && geo.cumArea[i + 1] < target) i++;
+    const binArea = geo.cumArea[i + 1] - geo.cumArea[i];
+    const t = binArea > 0 ? (target - geo.cumArea[i]) / binArea : 0;
+    return geo.yMin + (i + t) * geo.dy;
+};
+
+const _computeSpawnLine = (count) => {
+    const geo = _getFillGeometry();
+    const wallInset = 1.5 * _dp;
+    // Отрезок берём на высоте расчётного уровня воды: там колба точно открыта.
+    // Точную высоту рождения шейдер находит сам по реальной поверхности.
+    let y = _restLevelFor(count);
+    let span = _flaskSpanAt(y, wallInset, geo.xMin, geo.xMax);
+    // У самого потолка колбы отрезок может исчезнуть: опускаемся, пока он не появится.
+    for (let i = 0; i < 40 && !span; i++) {
+        y -= 0.5 * _dp;
+        span = _flaskSpanAt(y, wallInset, geo.xMin, geo.xMax);
+    }
+    return span ? { x0: span.x0, x1: span.x1, y } : _spawnLine;
+};
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -331,6 +483,7 @@ const _createMainFBOs = () => {
 const _initPosVelTex = (particleVBOs) => {
     let prg = _createProgram(0, 0, [0, 1, 2], [2, 2, 2], ['ParticleTexture', 'ToIntPos']);
     prg.use();
+    _gl.uniform1f(prg.uniform('activeCount'), _activeCount);
     GLU.setAttributes(_gl, particleVBOs, prg.location, prg.stride);
 
     _posVelReadFBO.bind();
@@ -409,19 +562,15 @@ const _updateParticles = () => {
     _gl.uniform2f(_updateParticlesProgram.uniform('g'), g.x, g.y);
     _gl.uniform4f(_updateParticlesProgram.uniform('pointerPosVel'), _pointerPos.x, _pointerPos.y, _pointerVel.x, _pointerVel.y);
     _gl.uniform1f(_updateParticlesProgram.uniform('pointerRadius'), 3);
-    _gl.uniform1f(_updateParticlesProgram.uniform('u_progress'), _progress);
     _gl.uniform1f(_updateParticlesProgram.uniform('particleCount'), _particleCount);
+    _gl.uniform1f(_updateParticlesProgram.uniform('u_active_count'), _activeCount);
+    _gl.uniform3f(_updateParticlesProgram.uniform('u_spawn_line'), _spawnLine.x0, _spawnLine.x1, _spawnLine.y);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_time'), _time);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_wave_amplitude'), _waveAmplitude);
     _gl.uniform2f(_updateParticlesProgram.uniform('u_container_pos'), _containerKinematics.position.x, _containerKinematics.position.y);
     _gl.uniform2f(_updateParticlesProgram.uniform('u_container_vel'), _containerKinematics.velocity.x, _containerKinematics.velocity.y);
-    _gl.uniform2f(_updateParticlesProgram.uniform('u_container_acc'), _containerKinematics.acceleration.x, _containerKinematics.acceleration.y);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_container_angle'), _containerKinematics.angle);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_container_ang_vel'), _containerKinematics.angularVelocity);
-    _gl.uniform1f(_updateParticlesProgram.uniform('u_container_ang_acc'), _containerKinematics.angularAcceleration);
-    _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse_strength'), _containerKinematics.reverseImpulseStrength);
-    _gl.uniform1f(_updateParticlesProgram.uniform('u_reverse_impulse_age'), _containerKinematics.reverseImpulseAge);
-    _gl.uniform2f(_updateParticlesProgram.uniform('u_reverse_delta_v'), _containerKinematics.reverseDeltaV.x, _containerKinematics.reverseDeltaV.y);
     _gl.uniform2f(_updateParticlesProgram.uniform('u_flask_half_size'), _flaskShape.boxHalfSize.x, _flaskShape.boxHalfSize.y);
     _gl.uniform1f(_updateParticlesProgram.uniform('u_flask_radius'), _flaskShape.radius);
     GLU.bindTextureUniform(_gl, 0, _updateParticlesProgram.uniform('posTex'),          _posVelReadFBO.texture('posVelh'));
@@ -468,6 +617,7 @@ const _sortParticles = () => {
     _sortParticlesProgram.use();
     _posVelWriteFBO.bind();
     _gl.uniform1f(_sortParticlesProgram.uniform('particleCount'), _particleCount);
+    _gl.uniform1f(_sortParticlesProgram.uniform('activeCount'), _activeCount);
     GLU.bindTextureUniform(_gl, 0, _sortParticlesProgram.uniform('scanTex'),    _cellBeginEndFBO.texture('scan'));
     GLU.bindTextureUniform(_gl, 1, _sortParticlesProgram.uniform('subcellTex'), _aggregateSubcellFBO.texture('subcell'));
     GLU.bindTextureUniform(_gl, 2, _sortParticlesProgram.uniform('indexTex'),   _writeIndexFBO.texture('tex'));
@@ -485,3 +635,4 @@ export const setFlaskShape = ({ boxHalfSize, radius }) => {
         radius: radius ?? _flaskShape.radius,
     };
 };
+

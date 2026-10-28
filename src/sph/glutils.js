@@ -95,6 +95,10 @@ export const bindTextureUniform = (gl, unit, location, tex) => {
     gl.uniform1i(location, unit);
 }
 
+// Один буфер на (контекст, binding). Раньше на каждый вызов создавался новый буфер
+// и никогда не удалялся: Update-блок обновляется каждый шаг, и память GPU утекала.
+const _uboCache = new WeakMap();
+
 export const bindUBO = (gl, binding, data) => {
     // 要素数が4の倍数(new Float32Array(_data).lengthが16Bの倍数)になるようにリサイズ
     let _data = data.slice();
@@ -102,11 +106,26 @@ export const bindUBO = (gl, binding, data) => {
     for (let i = 0; i < add; i++)
         _data.push(0);
 
-    let ubo = gl.createBuffer();
+    let perContext = _uboCache.get(gl);
+    if (!perContext) {
+        perContext = new Map();
+        _uboCache.set(gl, perContext);
+    }
+    let ubo = perContext.get(binding);
+    if (!ubo) {
+        ubo = gl.createBuffer();
+        perContext.set(binding, ubo);
+    }
     gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
-    gl.bufferData(gl.UNIFORM_BUFFER, new Float32Array(_data), gl.STATIC_DRAW, 0, _data.length);
+    gl.bufferData(gl.UNIFORM_BUFFER, new Float32Array(_data), gl.DYNAMIC_DRAW, 0, _data.length);
     gl.bindBuffer(gl.UNIFORM_BUFFER, null);
     gl.bindBufferBase(gl.UNIFORM_BUFFER, binding, ubo);
+}
+
+export const setLinearFilter = (gl, tex) => {
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 }
 
 export const loadTexture = (gl, url) => {
@@ -127,6 +146,27 @@ export const loadTexture = (gl, url) => {
         image.onerror = reject;
         image.src = url;
     });
+};
+
+// Запасной фон, если картинку не удалось загрузить (нет сети и т.п.):
+// мягкий вертикальный градиент, чтобы колба и вода всё равно рисовались.
+export const createFallbackBackground = (gl) => {
+    const w = 4, h = 256;
+    const data = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++) {
+        const t = y / (h - 1);
+        const rgb = [40 + 150 * t, 70 + 140 * t, 110 + 130 * t];
+        for (let x = 0; x < w; x++)
+            data.set([rgb[0], rgb[1], rgb[2], 255], 4 * (y * w + x));
+    }
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    return texture;
 };
 
 export const setAttributes = (gl, vbo, attL, attS) => {

@@ -39,19 +39,18 @@ layout(std140) uniform Update {
 uniform vec2  g;
 uniform vec4  pointerPosVel;
 uniform float pointerRadius;
-uniform float u_progress;
 uniform float particleCount;
+// Активны частицы в слотах [0, u_active_count) (см. sortparticles.vert).
+uniform float u_active_count;
+// Отрезок по x, на котором рождаются новые частицы (внутри колбы на высоте
+// расчётного уровня воды): xy — концы отрезка, z — его высота y.
+uniform vec3 u_spawn_line;
 uniform float u_time;
 uniform float u_wave_amplitude;
 uniform vec2 u_container_pos;
 uniform vec2 u_container_vel;
-uniform vec2 u_container_acc;
 uniform float u_container_angle;
 uniform float u_container_ang_vel;
-uniform float u_container_ang_acc;
-uniform float u_reverse_impulse_strength;
-uniform float u_reverse_impulse_age;
-uniform vec2 u_reverse_delta_v;
 uniform vec2 u_flask_half_size;
 uniform float u_flask_radius;
 uniform sampler2D  posTex;
@@ -64,6 +63,9 @@ uniform sampler2D  accWallKerTex;
 layout(location = 0) out vec4 oPos;
 layout(location = 1) out vec2 oVel;
 layout(location = 2) out ivec2 oIntPos;
+
+// Маркер неактивной частицы (см. initparticles.frag).
+const int INACTIVE = -32768;
 
 vec2 idx2uv(in float idx, in vec4 texelSizeOffset) {
     float y;
@@ -181,51 +183,94 @@ vec2 calcAcceleration() {
         acc_i += (sidePressureScale * pres * accWKer.x - repul) * posDir + viscWall;
     }
 
-    vec2 r_world = pos_i - u_container_pos;
-    vec2 tangential = vec2(-r_world.y, r_world.x) * u_container_ang_acc;
-    vec2 centripetal = -u_container_ang_vel * u_container_ang_vel * r_world;
-    vec2 a_container = u_container_acc + tangential + centripetal;
-
+    // Симуляция идёт в мировой системе координат: колба двигается, и стенки сами
+    // передают воде импульс через граничные силы выше. Добавлять ещё и силу инерции
+    // (-a_container) значило бы учесть движение колбы дважды.
     acc_i *= coefAcceleration;
-    acc_i += g - a_container;
-
-    float impulseDecay = exp(-u_reverse_impulse_age * 30.0);
-    vec2 deltaDir = normalize(u_reverse_delta_v + vec2(1e-5, 0.0));
-    float endBlend = smoothstep(3.0, 5.0, abs(p.x));
-    float edgeWeight = endBlend * exp(-abs(dist_iw) * 6.0);
-    float normalAlign = max(dot(posDir, -deltaDir), 0.0);
-    float impulse = u_reverse_impulse_strength * impulseDecay * edgeWeight * normalAlign;
-    if (u_reverse_impulse_strength > 0.0 && dist_iw < kernelRadius) {
-        acc_i += posDir * impulse;
-    }
+    acc_i += g;
 
     return acc_i;
 }
 
+vec2 wallVelocityAt(vec2 p) {
+    vec2 r = p - u_container_pos;
+    return u_container_vel + vec2(-r.y, r.x) * u_container_ang_vel;
+}
+
+// Высота реальной поверхности воды в колонке x: идём по ячейкам сетки сверху вниз
+// и берём самую верхнюю частицу рядом с x. Без воды в колонке — NaN-заменитель -1e9.
+float waterSurfaceAt(float x, float yFrom, float yTo) {
+    float cx    = floor((x - cellOrigin.x) * rcplCellSize);
+    float cyTop = floor((yFrom - cellOrigin.y) * rcplCellSize);
+    float cyBot = max(floor((yTo - cellOrigin.y) * rcplCellSize), 0.0);
+    cyTop = min(cyTop, cellResolution.y - 1.0);
+    for (int k = 0; k < 96; k++) {
+        float cy = cyTop - float(k);
+        if (cy < cyBot) break;
+        // cellBeginEnd хранит диапазон сразу трёх ячеек по x: [cx-1, cx+1].
+        vec2 begEnd = vec2(texture(cellBeginEndTex, cell2uv(vec2(cx, cy))).xy);
+        float best = -1e9;
+        for (float j = begEnd.x; j < begEnd.y; j++) {
+            vec2 pj = vec2(texture(intPosTex, idx2uv(j, particleTexelSizeOffset)).xy) * toFloatPos;
+            if (abs(pj.x - x) < 1.5 * dp) best = max(best, pj.y);
+        }
+        if (best > -1e8) return best;
+    }
+    return -1e9;
+}
+
+// Дно колбы в колонке x (с отступом от стенки), если воды в колонке ещё нет.
+float flaskFloorAt(float x, mat2 invRot, float inset) {
+    float y = u_container_pos.y;
+    for (int k = 0; k < 160; k++) {
+        vec2 pl = invRot * (vec2(x, y - 0.5 * dp) - u_container_pos);
+        if (sdRoundedBox(pl, u_flask_half_size, u_flask_radius) > -inset) break;
+        y -= 0.5 * dp;
+    }
+    return y;
+}
+
+void writeInactive() {
+    oPos = vec4(0.0);
+    oVel = vec2(0.0);
+    oIntPos = ivec2(INACTIVE);
+}
+
 void main(void) {
-    float particleIndex = floor(gl_FragCoord.y) * round(1.0 / particleTexelSizeOffset.x) + floor(gl_FragCoord.x);
-    float activeCount = u_progress * particleCount;
-    
-    if (particleIndex >= activeCount) {
-        // Hide particle
-        oPos = vec4(1000.0, 1000.0, 0.0, 0.0);
-        oVel = vec2(0.0);
-        oIntPos = ivec2(round(vec2(1000.0, 1000.0) * toIntPos));
+    vec2  uv_i = gl_FragCoord.xy * particleTexelSizeOffset.xy;
+    float slot = floor(gl_FragCoord.y) * round(1.0 / particleTexelSizeOffset.x) + floor(gl_FragCoord.x);
+    if (slot >= u_active_count) {
+        // Неактивна (или хвост текстуры за последней частицей). При сливе сюда
+        // попадают верхние частицы: после сортировки последние слоты — самые верхние.
+        writeInactive();
+        return;
+    }
+
+    if (texture(intPosTex, uv_i).x == INACTIVE) {
+        // Частица только что стала активной: рождается прямо над реальной поверхностью
+        // воды в своей колонке и мягко ложится на неё — без падения струёй.
+        // Золотое сечение раскладывает последовательные слоты по ширине равномерно,
+        // поэтому рождённые подряд частицы не налезают друг на друга.
+        float t = fract(slot * 0.6180339887 + 0.5);
+        float x = mix(u_spawn_line.x, u_spawn_line.y, t);
+        float reach = length(u_flask_half_size) + kernelRadius;
+        float surface = waterSurfaceAt(x, u_container_pos.y + reach, u_container_pos.y - reach);
+        float angle = u_container_angle;
+        mat2 invRot = transpose(mat2(cos(angle), -sin(angle), sin(angle), cos(angle)));
+        float y = surface > -1e8 ? surface + 0.9 * dp : flaskFloorAt(x, invRot, 1.0 * dp);
+        y += 0.15 * dp * fract(slot * 0.7548776662);
+        vec2 spawnPos = vec2(x, y);
+        vec2 spawnVel = wallVelocityAt(spawnPos);
+        oPos    = vec4(spawnPos, spawnVel);
+        oVel    = spawnVel;
+        oIntPos = ivec2(round(spawnPos * toIntPos));
         return;
     }
 
     vec2 acc  = calcAcceleration();
-    vec4 pvh  = texture(posTex, gl_FragCoord.xy * particleTexelSizeOffset.xy);
+    vec4 pvh  = texture(posTex, uv_i);
     vec2 pos  = pvh.xy;
     vec2 velh = pvh.zw;
-
-    if (pos.x > 500.0) {
-        // Just became active! Teleport to top of capsule
-        float randX = (fract(sin(particleIndex * 12.9898) * 43758.5453) * 2.0 - 1.0) * max(u_flask_half_size.x - u_flask_radius, 0.1);
-        float startY = u_container_pos.y + max(u_flask_half_size.y - u_flask_radius - 0.05, 0.0);
-        pos = vec2(u_container_pos.x + randX, startY);
-        velh = vec2(0.0, -2.0);
-    }
 
     float dist_im_sq = dot(pos - pointerPosVel.xy, pos - pointerPosVel.xy);
     if (dist_im_sq < pointerRadius * pointerRadius) {

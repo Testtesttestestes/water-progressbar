@@ -44,6 +44,9 @@ uniform float u_flask_radius;
 
 out vec4 o;
 
+// Маркер неактивной частицы (см. initparticles.frag).
+const int INACTIVE = -32768;
+
 vec2 idx2uv(in float idx, in vec4 texelSizeOffset) {
     float y;
     float x = modf(idx * texelSizeOffset.x + texelSizeOffset.z, y);
@@ -65,7 +68,12 @@ float wallContactThickness() {
 
 void main(void) {
     vec2 uv_i  = gl_FragCoord.xy * particleTexelSizeOffset.xy;
-    vec2 pos_i = vec2(texture(intPosTex, uv_i).xy) * toFloatPos;
+    ivec2 ipos_i = texture(intPosTex, uv_i).xy;
+    if (ipos_i.x == INACTIVE) {
+        o = vec4(0.0, 0.0, 0.0, rcplRho0);
+        return;
+    }
+    vec2 pos_i = vec2(ipos_i) * toFloatPos;
     if (uv_i.x > particleTexMaxUV.x && uv_i.y > particleTexMaxUV.y)
         pos_i = vec2(domainRadius);
     vec2 cell_i = floor((pos_i - cellOrigin) * rcplCellSize);

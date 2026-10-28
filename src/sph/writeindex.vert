@@ -11,6 +11,9 @@ layout(std140) uniform Subcell {
     vec2 rcplSubcellSize;
 };
 
+// Маркер неактивной частицы (см. initparticles.frag).
+const int INACTIVE = -32768;
+
 uniform float particleCount;
 uniform isampler2D intPosTex;
 
@@ -27,7 +30,14 @@ void main(void) {
     float idx = vid - particleCount * step(particleCount, vid);
     vIndex = idx + 1.0;
 
-    vec2  pos     = vec2(texture(intPosTex, idx2uv(idx, particleTexelSizeOffset)).xy) * toFloatPos;
+    ivec2 ipos    = texture(intPosTex, idx2uv(idx, particleTexelSizeOffset)).xy;
+    if (ipos.x == INACTIVE) {
+        // Вне клипа: частица не попадает в подъячейки и не считается соседом.
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        gl_PointSize = 1.0;
+        return;
+    }
+    vec2  pos     = vec2(ipos) * toFloatPos;
     vec2  subcell = floor((pos - subcellOrigin) * rcplSubcellSize);
     vec2  uv      = idx2uv(subcell.y * subcellResolution.x + subcell.x, subcellTexelSizeOffset);
     float depth   = (idx + 1.0) / (particleCount + 2.0);

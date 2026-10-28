@@ -86,6 +86,7 @@ export const init = (gl, canvas, meshSize, meshingAreaMin, meshingAreaMax, { mes
         return new Vec2(rx, ry);
     })();
 
+    removeEventListener('resize', _calcSimToClip);
     addEventListener('resize', _calcSimToClip);
 
     _createPrograms();
@@ -146,7 +147,10 @@ export const renderWater = (particleCount, dp, particleTexReso, intPosTex, _, ce
 
     _distanceFieldProgram.use();
     _distanceFieldFBO.bind();
-    _gl.uniform1f(_distanceFieldProgram.uniform('particleRadius'), dp * 8.5);
+    // Радиус частицы для поверхности по Zhu & Bridson: порядка шага частиц.
+    // Прежние 8.5·dp были больше радиуса сглаживания (3·dp), и водой считалась
+    // любая точка рядом хоть с одной частицей — граница выходила бинарной и рваной.
+    _gl.uniform1f(_distanceFieldProgram.uniform('particleRadius'), dp * 1.5);
     GLU.bindTextureUniform(_gl, 0, _distanceFieldProgram.uniform('weightedCenterTex'), _weightedCenterFBO.texture('tex'));
     _gl.drawArrays(_gl.TRIANGLES, 0, 3);
 
@@ -206,6 +210,9 @@ const _createFBOs = () => {
     _smoothPosFBO      = create(new Vec2(1), [['tex', 'RG16I'  ]]);
     _weightedCenterFBO = create(_resolution, [['tex', 'RGBA16F']]);
     _distanceFieldFBO  = create(_resolution, [['tex', 'R16F']]);
+    // Финальный шейдер семплирует поле расстояний попиксельно: с NEAREST поверхность
+    // воды получалась «лесенкой». R16F фильтруется линейно без расширений.
+    GLU.setLinearFilter(_gl, _distanceFieldFBO.texture('tex'));
 };
 
 const _initTableTex = () => {
