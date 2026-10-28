@@ -197,9 +197,26 @@ vec2 wallVelocityAt(vec2 p) {
     return u_container_vel + vec2(-r.y, r.x) * u_container_ang_vel;
 }
 
-// Высота реальной поверхности воды в колонке x: идём по ячейкам сетки сверху вниз
-// и берём самую верхнюю частицу рядом с x. Без воды в колонке — NaN-заменитель -1e9.
+// Сколько соседей у частицы в радиусе ядра (с ней самой).
+float neighborCount(vec2 p) {
+    vec2 c = floor((p - cellOrigin) * rcplCellSize);
+    float count = 0.0;
+    for (float cy = -1.; cy <= 1.; cy++) {
+        vec2 begEnd = vec2(texture(cellBeginEndTex, cell2uv(vec2(c.x, c.y + cy))).xy);
+        for (float j = begEnd.x; j < begEnd.y; j++) {
+            vec2 d = p - vec2(texture(intPosTex, idx2uv(j, particleTexelSizeOffset)).xy) * toFloatPos;
+            count += step(dot(d, d), kernelRadiusSq);
+        }
+    }
+    return count;
+}
+
+// Высота поверхности воды в колонке x: идём по ячейкам сверху вниз и берём самую
+// верхнюю частицу рядом с x, у которой есть опора (достаточно соседей).
+// Падающие одиночные частицы не считаются: иначе следующая частица рождалась бы
+// над ещё летящей, и над водой нарастала бы «морось». Без воды в колонке — -1e9.
 float waterSurfaceAt(float x, float yFrom, float yTo) {
+    const float MIN_SUPPORT = 5.0;
     float cx    = floor((x - cellOrigin.x) * rcplCellSize);
     float cyTop = floor((yFrom - cellOrigin.y) * rcplCellSize);
     float cyBot = max(floor((yTo - cellOrigin.y) * rcplCellSize), 0.0);
@@ -212,7 +229,8 @@ float waterSurfaceAt(float x, float yFrom, float yTo) {
         float best = -1e9;
         for (float j = begEnd.x; j < begEnd.y; j++) {
             vec2 pj = vec2(texture(intPosTex, idx2uv(j, particleTexelSizeOffset)).xy) * toFloatPos;
-            if (abs(pj.x - x) < 1.5 * dp) best = max(best, pj.y);
+            if (abs(pj.x - x) < 1.5 * dp && pj.y > best && neighborCount(pj) >= MIN_SUPPORT)
+                best = pj.y;
         }
         if (best > -1e8) return best;
     }
