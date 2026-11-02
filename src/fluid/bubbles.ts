@@ -143,15 +143,33 @@ export class Bubbles {
       a.set([x, 0, 0.02 + 0.03 * rand(), 3], 4 * i);
       b.set([rand(), 0, 1, x], 4 * i);
     }
+    // Пузырьки на стекле зарождаются на микроцарапинах и пылинках — они есть по
+    // всему стеклу, но неравномерно: плотность плавно меняется (сумма нескольких
+    // широких «пятен»), и лишь кое-где — плотные кучки. Раскладка — отбором:
+    // точка принимается с вероятностью, пропорциональной плотности.
+    const blobs: [number, number, number, number][] = [];
+    for (let k = 0; k < 9; k++) blobs.push([(rand() * 2 - 1) * cx, (rand() * 2 - 1) * cy, 0.6 + 1.6 * rand(), 0.4 + rand()]);
+    const density = (x: number, y: number) => {
+      let d = 0.25;
+      for (const [bx, by, r, w] of blobs) d += w * Math.exp(-((x - bx) ** 2 + ((y - by) * 1.6) ** 2) / (r * r));
+      // Ближе ко дну пузырьков чуть больше (газ выходит из воды дольше).
+      return d * (1.25 - 0.35 * (y / cy));
+    };
+    const maxDensity = 0.25 + blobs.reduce((s, b) => s + b[3], 0) * 1.6;
     for (let i = 0; i < ATTACHED; i++) {
-      const [ux, uy, weight] = clusters[Math.floor(rand() * clusters.length)];
       let x = 0, y = 0, radius = 0;
-      for (let tries = 0; tries < 20; tries++) {
-        // Облако: шире по горизонтали, вытянуто по вертикали; часть — одиночки по всей колбе.
-        const lone = rand() < 0.18;
-        x = lone ? (rand() * 2 - 1) * cx : ux + gauss() * 0.3 * weight;
-        y = lone ? -cy + rand() * 1.6 * cy : uy + gauss() * 0.5 * weight;
-        radius = 0.02 + 0.035 * Math.pow(rand(), 2.2);
+      const clustered = rand() < 0.22;
+      const [ux, uy, weight] = clusters[Math.floor(rand() * clusters.length)];
+      for (let tries = 0; tries < 60; tries++) {
+        if (clustered) {
+          x = ux + gauss() * 0.22 * weight;
+          y = uy + gauss() * 0.35 * weight;
+        } else {
+          x = (rand() * 2 - 1) * cx;
+          y = (rand() * 2 - 1) * cy;
+          if (rand() * maxDensity > density(x, y)) continue;
+        }
+        radius = 0.016 + 0.034 * Math.pow(rand(), 2.4);
         if (inside(x, y, radius + 0.02)) break;
       }
       a.set([x, y, radius, 2], 4 * i);

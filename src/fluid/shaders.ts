@@ -124,7 +124,7 @@ void main() {
     o = vec4(wu, wv, area, 0.0);
 }`;
 
-// Для ячеек целиком в стекле — ближайшая ячейка с водой/воздухом: оттуда level set
+// Для ячеек целиком в стекле — ближайшая целая ячейка полости: оттуда level set
 // продолжается в стекло линейно, по своему градиенту.
 export const FS_EXTENSION_MAP = `${COMMON}
 uniform sampler2D uGeo;
@@ -140,7 +140,10 @@ void main() {
         for (int dx = -6; dx <= 6; dx++) {
             ivec2 q = c + ivec2(dx, dy);
             if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, uN))) continue;
-            if (texelFetch(uGeo, q, 0).z < 0.25) continue;
+            // Источник — только целая ячейка полости. Срезанные стенкой ячейки
+            // тоньше шага сетки: если продолжать φ из них, плёнка «воды» вдоль
+            // стенки сама себя подпитывала бы из стекла и бесконечно стекала.
+            if (texelFetch(uGeo, q, 0).z < 0.99) continue;
             float d = float(dx * dx + dy * dy);
             if (d < best) { best = d; bestCell = vec2(q); }
         }
@@ -178,6 +181,12 @@ void main() {
             vec2 grad = vec2(neighbor(uPhi, uGeo, q, ivec2(1, 0), pq) - neighbor(uPhi, uGeo, q, ivec2(-1, 0), pq),
                              neighbor(uPhi, uGeo, q, ivec2(0, 1), pq) - neighbor(uPhi, uGeo, q, ivec2(0, -1), pq)) / (2.0 * uH);
             phi = pq + dot(grad, cellCenter(c) - cellCenter(q));
+            // Знак может смениться только там, где граница воды и правда уходит в
+            // стекло (контактная линия рядом с q). Вдали от неё градиент у
+            // скруглённого угла смотрит в угол, и линейное продолжение рисовало
+            // в стекле «воду», которая затягивала соседние ячейки — вода ползла
+            // вверх по углу и раскачивалась.
+            if (phi * pq < 0.0 && abs(pq) > 2.0 * uH) phi = pq;
         }
     }
     o = vec4(phi);
@@ -196,26 +205,32 @@ void main() {
 }`;
 
 // Поправка MacCormack с ограничителем: второй порядок без новых экстремумов.
+// У стенок — обычный полулагранжев перенос (Selle et al. 2008): шаблон поправки
+// там захватывает закрытые грани с нулевой скоростью, и «исправление ошибки»
+// раскачивало пристенный слой — на мелкой сетке это росло экспоненциально.
 export const FS_MACCORMACK_VEL = `${COMMON}
 uniform sampler2D uVel;  // поле на шаге n
 uniform sampler2D uHat;  // результат прямого переноса
 uniform float uDt;
+bool nearWall(vec2 p, vec2 back) { return max(cavitySd(p), cavitySd(back)) > -2.0 * uH; }
 void main() {
     ivec2 f = ivec2(gl_FragCoord.xy);
     float u = 0.0, v = 0.0;
     if (f.y < uN.y) {
         vec2 p = uFacePos(f);
-        vec3 s = sampleUStencil(uVel, backtrace(uVel, p, uDt));
+        vec2 back = backtrace(uVel, p, uDt);
+        vec3 s = sampleUStencil(uVel, back);
         float tilde = sampleU(uHat, backtrace(uVel, p, -uDt));
         float value = texelFetch(uHat, f, 0).x + 0.5 * (texelFetch(uVel, f, 0).x - tilde);
-        u = clamp(value, s.y, s.z);
+        u = nearWall(p, back) ? texelFetch(uHat, f, 0).x : clamp(value, s.y, s.z);
     }
     if (f.x < uN.x) {
         vec2 p = vFacePos(f);
-        vec3 s = sampleVStencil(uVel, backtrace(uVel, p, uDt));
+        vec2 back = backtrace(uVel, p, uDt);
+        vec3 s = sampleVStencil(uVel, back);
         float tilde = sampleV(uHat, backtrace(uVel, p, -uDt));
         float value = texelFetch(uHat, f, 0).y + 0.5 * (texelFetch(uVel, f, 0).y - tilde);
-        v = clamp(value, s.y, s.z);
+        v = nearWall(p, back) ? texelFetch(uHat, f, 0).y : clamp(value, s.y, s.z);
     }
     o = vec4(u, v, 0.0, 1.0);
 }`;
@@ -362,8 +377,12 @@ void main() {
     float phi = texelFetch(uPhi, c, 0).x;
     float height = dot(cellCenter(c), uUp);
     float fill = uTargetVolume / uTotalVolume;
-    if (fill >= 0.9995) { o = vec4(min(phi, height - (uLevels.y + uH))); return; }
-    if (fill <= 0.0005) { o = vec4(max(phi, height - (uLevels.x - uH))); return; }
+    // Ровно плоскость, а не min/max с прежним полем: в полной (пустой) колбе
+    // границы нет, и реинициализация ничем не держит φ — у скруглённых углов оно
+    // уходило в глубокий минус. Потом при сливе там оставалась «вода», прилипшая
+    // к потолку, и сама себя поддерживала через продолжение φ в стекло.
+    if (fill >= 0.9995) { o = vec4(height - (uLevels.y + uH)); return; }
+    if (fill <= 0.0005) { o = vec4(height - (uLevels.x - uH)); return; }
     vec2 s = texelFetch(uSum, ivec2(0), 0).xy;
     float delta = clamp((uTargetVolume - s.x) / max(s.y, 1e-4), -0.5 * uH, 0.5 * uH);
     o = vec4(phi - delta);
