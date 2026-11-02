@@ -109,20 +109,42 @@ uniform vec2 uUp;          // «вверх» в системе колбы (пр�
 out vec4 outColor;
 
 // Ширина складки (мировые единицы) — область, где она работает как линза.
-const float RIDGE_WIDTH = 0.035;
+const float RIDGE_WIDTH = 0.028;
 
-// Профиль складок: 0..1 на линиях поля f, которые идут наискосок и вьются;
-// шаг между ними «плавает», яркость меняется вдоль линии и гаснет с глубиной.
-float ridge(vec2 local, float phi) {
-    float t = uTime * 0.22;
-    vec2 q = vec2(0.87 * local.x - 0.5 * local.y, 0.5 * local.x + 0.87 * local.y);
-    float f = q.x * 1.1 + 0.45 * sin(0.8 * q.y + 0.5 * q.x + t)
-            + 0.18 * sin(1.9 * q.y - 0.8 * q.x - 0.7 * t)
-            + 0.9 * (noise(q * vec2(0.3, 0.45) + vec2(0.25 * t, -0.2 * t)) - 0.5);
-    float dist = abs(fract(f) - 0.5) / 1.1;          // расстояние до линии, мир
-    float along = 0.3 + 0.7 * smoothstep(0.2, 0.6, noise(q * vec2(0.35, 0.9) + vec2(t * 0.3, 3.0)));
-    float fade = mix(0.35, 1.0, exp(-max(-phi, 0.0) * 0.7));
-    return along * fade * exp(-pow((0.5 / 1.1 - dist) / RIDGE_WIDTH, 2.0));
+// Нити (filaments.ts): кривые в координатах (u — вдоль поверхности, d — глубина
+// под ней). Возвращает профиль H, его градиент в (u, d) и кривизну поперёк нити.
+uniform sampler2D uFilaments;
+uniform int uFilamentCount;
+void filaments(vec2 ud, out float H, out vec2 grad, out float focus) {
+    H = 0.0; grad = vec2(0.0); focus = 0.0;
+    float reach = 3.0 * RIDGE_WIDTH;
+    for (int i = 0; i < 32; i++) {
+        if (i >= uFilamentCount) break;
+        vec4 info = texelFetch(uFilaments, ivec2(16, i), 0);
+        if (ud.x < info.x - reach || ud.x > info.y + reach || ud.y > info.z + reach) continue;
+        float best = 1e9, bestS = 0.0;
+        vec2 bestP = vec2(0.0);
+        vec2 a = texelFetch(uFilaments, ivec2(0, i), 0).xy;
+        for (int k = 1; k < 16; k++) {
+            vec2 b = texelFetch(uFilaments, ivec2(k, i), 0).xy;
+            vec2 ab = b - a;
+            float t = clamp(dot(ud - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+            vec2 c = a + ab * t;
+            float d2 = dot(ud - c, ud - c);
+            if (d2 < best) { best = d2; bestP = c; bestS = (float(k - 1) + t) / 15.0; }
+            a = b;
+        }
+        float dist = sqrt(best);
+        if (dist > reach) continue;
+        // Нить загорается у поверхности и гаснет к своему концу; толщина чуть меняется.
+        float amp = info.w * smoothstep(0.0, 0.12, bestS) * (1.0 - smoothstep(0.5, 1.0, bestS));
+        float w = RIDGE_WIDTH * (0.8 + 0.4 * sin(bestS * 9.0 + float(i)));
+        float prof = exp(-dist * dist / (w * w));
+        H += amp * prof;
+        grad += amp * prof * (-2.0 / (w * w)) * (ud - bestP);
+        focus += amp * prof * (4.0 * dist * dist / (w * w * w * w) - 2.0 / (w * w));
+    }
+    focus = -focus;
 }
 
 void main() {
@@ -164,11 +186,12 @@ void main() {
     vec2 ridgeGrad = vec2(0.0);
     float ridgeFocus = 0.0;
     if (water > 0.0) {
-        float e = 0.75 * pw;
-        float h0 = ridge(local, phi), hx1 = ridge(local + vec2(e, 0.0), phi), hx0 = ridge(local - vec2(e, 0.0), phi);
-        float hy1 = ridge(local + vec2(0.0, e), phi), hy0 = ridge(local - vec2(0.0, e), phi);
-        ridgeGrad = vec2(hx1 - hx0, hy1 - hy0) / (2.0 * e);
-        ridgeFocus = -(hx1 + hx0 + hy1 + hy0 - 4.0 * h0) / (e * e);
+        vec2 side = vec2(uUp.y, -uUp.x);
+        vec2 ud = vec2(dot(local, side), max(-phi, 0.0));
+        float H; vec2 g;
+        filaments(ud, H, g, ridgeFocus);
+        // Градиент из (u, d) в систему колбы: d растёт вниз, против «вверх».
+        ridgeGrad = g.x * side - g.y * uUp;
     }
 
     // ---------- преломление ----------

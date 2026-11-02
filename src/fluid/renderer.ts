@@ -1,6 +1,7 @@
 import { Program, Target, drawFullscreen, UniformValue } from './gl';
 import { FS_BLUR_PHI, FS_HIGHLIGHTS, FS_SCENE, FS_BUBBLES, VS_BUBBLES, VS_FULLSCREEN_RENDER } from './renderShaders';
 import { BUBBLE_COUNT, Bubbles } from './bubbles';
+import { FILAMENT_COUNT, Filaments } from './filaments';
 import type { FluidSolver } from './solver';
 
 export interface FlaskView {
@@ -27,6 +28,8 @@ export class FluidRenderer {
   private bubbles: Program;
   private blur: Program;
   private blurTemp: Target | null = null;
+  private filaments: Filaments | null = null;
+  private filamentsFor = 0;
 
   constructor(private gl: WebGL2RenderingContext) {
     this.scene = new Program(gl, VS_FULLSCREEN_RENDER, FS_SCENE);
@@ -62,11 +65,19 @@ export class FluidRenderer {
     flask: FlaskView;
     camera: Camera;
     time: number;
+    /** Средняя глубина воды — нити не тянутся до дна. */
+    waterDepth?: number;
   }) {
     const gl = this.gl;
     const { solver, flask, camera, width, height } = opts;
     solver.prepareRender();
     this.smoothPhi(solver, 1.6);
+    if (!this.filaments || this.filamentsFor !== solver.cavityHalf[0]) {
+      this.filaments?.dispose();
+      this.filaments = new Filaments(gl, solver.cavityHalf[0]);
+      this.filamentsFor = solver.cavityHalf[0];
+    }
+    this.filaments.update(opts.time, opts.waterDepth ?? 2 * solver.cavityHalf[1]);
 
     // «cover»: фон заполняет холст без растяжения.
     const canvasAspect = width / height;
@@ -89,6 +100,8 @@ export class FluidRenderer {
       uBgScale: bgScale,
       uTime: opts.time,
       uUp: flask.up,
+      uFilaments: this.filaments.target.texture,
+      uFilamentCount: FILAMENT_COUNT,
     };
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -116,5 +129,6 @@ export class FluidRenderer {
     this.bubbles.dispose();
     this.blur.dispose();
     this.blurTemp?.dispose();
+    this.filaments?.dispose();
   }
 }

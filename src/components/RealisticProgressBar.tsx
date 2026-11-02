@@ -147,6 +147,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         flask: { position: kin.position, angle: kin.angle, halfSize: [halfX, halfY], radius, glass, up: rotate(-kin.angle, [0, 1]) },
         camera: { center: [0, 0], height: VIEW_HEIGHT },
         time: simTime,
+        waterDepth: fill * 2 * solver.cavityHalf[1],
       });
       frame = requestAnimationFrame(loop);
     };
