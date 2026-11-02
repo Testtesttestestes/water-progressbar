@@ -10,7 +10,7 @@ export default function App() {
   const [progress, setProgress] = useState(0.5);
   const [isWaving, setIsWaving] = useState(false);
   const [tiltAngle, setTiltAngle] = useState(0);
-  const [particleScale, setParticleScale] = useState(1);
+  const [resolution, setResolution] = useState(1);
   const [gravityScale, setGravityScale] = useState(1);
   const [flaskWidth, setFlaskWidth] = useState(10);
   const [flaskHeight, setFlaskHeight] = useState(3);
@@ -23,7 +23,7 @@ export default function App() {
         progress={progress}
         isWaving={isWaving}
         tiltAngle={tiltAngle}
-        particleScale={particleScale}
+        resolution={resolution}
         gravityScale={gravityScale}
         flaskWidth={flaskWidth}
         flaskHeight={flaskHeight}
@@ -41,7 +41,7 @@ export default function App() {
         <div className="flex justify-between items-end mb-4">
           <div>
             <h1 className="text-lg font-medium text-white leading-none">Water Shader</h1>
-            <p className="text-[10px] text-white/50 mt-1 uppercase tracking-wider">WebGL SPH</p>
+            <p className="text-[10px] text-white/50 mt-1 uppercase tracking-wider">WebGL Navier–Stokes</p>
           </div>
           <div className="text-sm font-mono text-white/80">
             {Math.round(progress * 100)}%
@@ -63,16 +63,16 @@ export default function App() {
 
           <div>
             <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/60">
-              <span>Particle Scale</span>
-              <span>{particleScale.toFixed(2)}x</span>
+              <span>Resolution</span>
+              <span>{resolution.toFixed(2)}x</span>
             </div>
             <input
               type="range"
-              min="0.1"
-              max="1.5"
-              step="0.01"
-              value={particleScale}
-              onChange={(e) => setParticleScale(parseFloat(e.target.value))}
+              min="0.5"
+              max="2"
+              step="0.05"
+              value={resolution}
+              onChange={(e) => setResolution(parseFloat(e.target.value))}
               className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white"
             />
           </div>
