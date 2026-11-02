@@ -157,7 +157,7 @@ export class Program {
       if (!u || value === undefined) continue;
       const v = value as any;
       switch (u.type) {
-        case gl.FLOAT: gl.uniform1f(u.loc, v); break;
+        case gl.FLOAT: if (typeof v === 'number') gl.uniform1f(u.loc, v); else gl.uniform1fv(u.loc, v); break;
         case gl.FLOAT_VEC2: gl.uniform2fv(u.loc, v); break;
         case gl.FLOAT_VEC3: gl.uniform3fv(u.loc, v); break;
         case gl.FLOAT_VEC4: gl.uniform4fv(u.loc, v); break;

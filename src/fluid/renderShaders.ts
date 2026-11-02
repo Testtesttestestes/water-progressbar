@@ -108,43 +108,34 @@ export const FS_SCENE = `${RENDER_COMMON}
 uniform vec2 uUp;          // «вверх» в системе колбы (против эффективной тяжести)
 out vec4 outColor;
 
-// Ширина складки (мировые единицы) — область, где она работает как линза.
-const float RIDGE_WIDTH = 0.028;
 
-// Нити (filaments.ts): кривые в координатах (u — вдоль поверхности, d — глубина
-// под ней). Возвращает профиль H, его градиент в (u, d) и кривизну поперёк нити.
-uniform sampler2D uFilaments;
-uniform int uFilamentCount;
-void filaments(vec2 ud, out float H, out vec2 grad, out float focus) {
-    H = 0.0; grad = vec2(0.0); focus = 0.0;
-    float reach = 3.0 * RIDGE_WIDTH;
-    for (int i = 0; i < 32; i++) {
-        if (i >= uFilamentCount) break;
-        vec4 info = texelFetch(uFilaments, ivec2(16, i), 0);
-        if (ud.x < info.x - reach || ud.x > info.y + reach || ud.y > info.z + reach) continue;
-        float best = 1e9, bestS = 0.0;
-        vec2 bestP = vec2(0.0);
-        vec2 a = texelFetch(uFilaments, ivec2(0, i), 0).xy;
-        for (int k = 1; k < 16; k++) {
-            vec2 b = texelFetch(uFilaments, ivec2(k, i), 0).xy;
-            vec2 ab = b - a;
-            float t = clamp(dot(ud - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
-            vec2 c = a + ab * t;
-            float d2 = dot(ud - c, ud - c);
-            if (d2 < best) { best = d2; bestP = c; bestS = (float(k - 1) + t) / 15.0; }
-            a = b;
-        }
-        float dist = sqrt(best);
-        if (dist > reach) continue;
-        // Нить загорается у поверхности и гаснет к своему концу; толщина чуть меняется.
-        float amp = info.w * smoothstep(0.0, 0.12, bestS) * (1.0 - smoothstep(0.5, 1.0, bestS));
-        float w = RIDGE_WIDTH * (0.8 + 0.4 * sin(bestS * 9.0 + float(i)));
-        float prof = exp(-dist * dist / (w * w));
-        H += amp * prof;
-        grad += amp * prof * (-2.0 / (w * w)) * (ud - bestP);
-        focus += amp * prof * (4.0 * dist * dist / (w * w * w * w) - 2.0 / (w * w));
-    }
-    focus = -focus;
+// Каустики (caustics.ts): яркость света на задней стенке в координатах
+// (u — вдоль поверхности, d — глубина под ней); 1 — ровный свет.
+uniform sampler2D uCaustics;
+uniform vec2 uCausticSize;   // (полудлина по u, глубина приёмника)
+uniform sampler2D uSurfaceProfile;   // RG32F, CAUSTIC_W×1: высота поверхности вдоль u
+// Глубина под поверхностью по профилю: φ — точное расстояние лишь у границы,
+// глубже оно ступенчатое, и каустики по нему шли бы полосами.
+float depthBelowSurface(vec2 local, vec2 side, float phi) {
+    int w = textureSize(uSurfaceProfile, 0).x;
+    float t = clamp(dot(local, side) / uCausticSize.x * 0.5 + 0.5, 0.0, 1.0) * float(w - 1);
+    int i = int(floor(t));
+    vec2 a = texelFetch(uSurfaceProfile, ivec2(i, 0), 0).xy;
+    vec2 b = texelFetch(uSurfaceProfile, ivec2(min(i + 1, w - 1), 0), 0).xy;
+    vec2 s = mix(a, b, t - float(i));
+    float fromProfile = s.x - dot(local, vec2(-side.y, side.x));
+    // У самой поверхности (волны, брызги) — φ, глубже — профиль.
+    float k = s.y * smoothstep(0.05, 0.3, -phi);
+    return max(mix(-phi, fromProfile, k), 0.0);
+}
+float causticAt(vec2 ud) {
+    // Строка 0 текстуры — самая глубокая (сетка каустик пишет глубину 0 в верх кадра).
+    vec2 t = vec2(ud.x / uCausticSize.x * 0.5 + 0.5, 1.0 - ud.y / uCausticSize.y);
+    if (t.y < 0.0) return 1.0;
+    // Источник света не точка (окно, небо): яркие фокусы мягко насыщаются,
+    // а тени не бывают совсем чёрными — их подсвечивает рассеянный свет комнаты.
+    float c = texture(uCaustics, t).x;
+    return 1.0 + (c >= 1.0 ? 2.0 * tanh((c - 1.0) / 2.0) : 0.6 * (c - 1.0));
 }
 
 void main() {
@@ -187,9 +178,14 @@ void main() {
     float ridgeFocus = 0.0;
     if (water > 0.0) {
         vec2 side = vec2(uUp.y, -uUp.x);
-        vec2 ud = vec2(dot(local, side), max(-phi, 0.0));
-        float H; vec2 g;
-        filaments(ud, H, g, ridgeFocus);
+        vec2 ud = vec2(dot(local, side), depthBelowSurface(local, side, phi));
+        float e = 1.5 * pw;
+        float c0 = causticAt(ud);
+        vec2 g = vec2(causticAt(ud + vec2(e, 0.0)) - causticAt(ud - vec2(e, 0.0)),
+                      causticAt(ud + vec2(0.0, e)) - causticAt(ud - vec2(0.0, e))) / (2.0 * e);
+        ridgeFocus = c0 - 1.0;
+        // Складка — пологая линза: резкий край тени не должен рвать фон.
+        g /= max(1.0, length(g) / 25.0);
         // Градиент из (u, d) в систему колбы: d растёт вниз, против «вверх».
         ridgeGrad = g.x * side - g.y * uUp;
     }
@@ -201,9 +197,9 @@ void main() {
     // У поверхности воды фон изгибается по её нормали (вода — тонкая линза).
     float nearSurface = 1.0 - smoothstep(0.0, 0.25, abs(phi));
     refr += localToWorldDir(nWater) * 0.05 * nearSurface * water;
-    refr -= localToWorldDir(ridgeGrad) * RIDGE_WIDTH * 0.07 * water;
+    refr -= localToWorldDir(ridgeGrad) * 0.0008 * water;
     vec2 ruv = uv + worldOffsetToUV(refr);
-    vec2 disp = worldOffsetToUV(nW) * 0.014 * slope2 + worldOffsetToUV(localToWorldDir(ridgeGrad)) * RIDGE_WIDTH * 0.012 * water;
+    vec2 disp = worldOffsetToUV(nW) * 0.014 * slope2 + worldOffsetToUV(localToWorldDir(ridgeGrad)) * 0.00015 * water;
     vec3 seen = vec3(background(ruv - disp).r, background(ruv).g, background(ruv + disp).b);
     // Сквозь толстое стекло на скосе фон чуть размыт.
     seen = mix(seen, backgroundBlur(ruv, 0.004), 0.55 * slope2);
@@ -221,10 +217,10 @@ void main() {
     graded *= mix(vec3(1.0), vec3(0.93, 1.0, 1.0), deep);
     col = mix(col, clamp(graded, 0.0, 1.0), water);
 
-    // Фокусировка света складками: ярко в середине, темнее по краям.
-    float focus = ridgeFocus * RIDGE_WIDTH * RIDGE_WIDTH;
-    col *= 1.0 - 0.18 * clamp(-focus, 0.0, 1.0) * water;
-    col += vec3(0.85, 0.94, 1.0) * 0.16 * clamp(focus, 0.0, 1.5) * water;
+    // Каустики: свет, собранный рябью, ярче; разошедшийся — чуть темнее.
+    float gain = clamp(ridgeFocus, -0.6, 4.0);
+    col *= 1.0 + 0.12 * min(gain, 0.0) * water;
+    col += vec3(0.86, 0.95, 1.0) * 0.07 * max(gain, 0.0) * water;
 
     // ---------- полоса поверхности ----------
     // Поверхность видна почти с ребра: задний и передний мениски, полное внутреннее

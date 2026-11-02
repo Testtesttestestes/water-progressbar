@@ -100,6 +100,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     let last: number | null = null;
     let accumulator = 0;
     let simTime = 0;
+    // Сглаженное волнение воды: растит рябь (каустики) и пузырьки у поверхности.
+    let waviness = 0;
     let kin = motion.step(0, { waving: false, tilt: tilt0, resonance: 1 });
 
     const loop = (now: number) => {
@@ -137,6 +139,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         // Волнение для пузырьков у поверхности: угловое ускорение и тряска относительно g.
         const agitation = (Math.abs(kin.omegaDot) * solver.cavityHalf[0] + Math.hypot(kin.accel[0], kin.accel[1])) / Math.max(g, 1);
         bubbles.update(SIM_DT, rotate(-kin.angle, [0, 1]), 40 * agitation);
+        waviness += (Math.min(25 * agitation, 2) - waviness) * (1 - Math.exp(-SIM_DT / 1.5));
         simTime += SIM_DT;
       }
 
@@ -147,7 +150,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         flask: { position: kin.position, angle: kin.angle, halfSize: [halfX, halfY], radius, glass, up: rotate(-kin.angle, [0, 1]) },
         camera: { center: [0, 0], height: VIEW_HEIGHT },
         time: simTime,
-        waterDepth: fill * 2 * solver.cavityHalf[1],
+        gravity: g,
+        agitation: waviness,
       });
       frame = requestAnimationFrame(loop);
     };
