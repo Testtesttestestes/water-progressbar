@@ -3,6 +3,7 @@ import { FluidSolver } from '../fluid/solver';
 import { FluidRenderer } from '../fluid/renderer';
 import { Bubbles } from '../fluid/bubbles';
 import { Spray } from '../fluid/spray';
+import { Whitewater } from '../fluid/whitewater';
 import { EARTH_GRAVITY, FlaskMotion, rotate, sloshingFrequency } from '../fluid/motion';
 import { BackgroundTexture, createFallbackBackground, loadBackground } from '../fluid/background';
 
@@ -70,7 +71,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     const motion = new FlaskMotion(tilt0, FLASK_CENTER_Y);
     const angle0 = -tilt0;
 
-    let solver: FluidSolver, bubbles: Bubbles, spray: Spray, renderer: FluidRenderer;
+    let solver: FluidSolver, bubbles: Bubbles, spray: Spray, whitewater: Whitewater, renderer: FluidRenderer;
     try {
       solver = new FluidSolver(gl, {
         halfSize: [halfX, halfY], radius, glass,
@@ -79,6 +80,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
       });
       bubbles = new Bubbles(gl, solver);
       spray = new Spray(gl, solver);
+      whitewater = new Whitewater(gl, solver);
       renderer = new FluidRenderer(gl);
     } catch (e) {
       console.error(e);
@@ -142,12 +144,13 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         const agitation = (Math.abs(kin.omegaDot) * solver.cavityHalf[0] + Math.hypot(kin.accel[0], kin.accel[1])) / Math.max(g, 1);
         bubbles.update(SIM_DT, rotate(-kin.angle, [0, 1]), 40 * agitation);
         spray.update(SIM_DT, accel, EARTH_GRAVITY);
+        whitewater.update(SIM_DT, accel, EARTH_GRAVITY);
         waviness += (Math.min(25 * agitation, 2) - waviness) * (1 - Math.exp(-SIM_DT / 1.5));
         simTime += SIM_DT;
       }
 
       renderer.render({
-        solver, bubbles, spray,
+        solver, bubbles, spray, whitewater,
         background: background.texture, backgroundSize: background.size,
         width: canvas.width, height: canvas.height,
         flask: { position: kin.position, angle: kin.angle, halfSize: [halfX, halfY], radius, glass, up: rotate(-kin.angle, [0, 1]) },
@@ -167,6 +170,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
       solver.dispose();
       bubbles.dispose();
       spray.dispose();
+      whitewater.dispose();
       renderer.dispose();
     };
   }, [halfX, halfY, radius, glass, resolution]);

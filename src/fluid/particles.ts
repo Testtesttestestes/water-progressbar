@@ -18,7 +18,8 @@ export const BAND = 3.0;          // ширина полосы, ячеек
 const RADIUS = 0.55;              // радиус частицы, ячеек
 const KERNEL = 2.0;               // радиус ядра Zhu–Bridson, ячеек
 const TARGET_PER_CELL = 4;
-const PW = 256;
+export const PARTICLE_ROW = 256;
+const PW = PARTICLE_ROW;
 
 // Частицы рисуются точками: номер вершины → тексель состояния.
 const VS_POINTS_HEAD = `#version 300 es
@@ -158,6 +159,23 @@ vec2 cavityNormal(vec2 p) {
     vec2 e = vec2(0.002, 0.0);
     return normalize(vec2(cavitySd(p + e.xy) - cavitySd(p - e.xy), cavitySd(p + e.yx) - cavitySd(p - e.yx)) + 1e-9);
 }
+// У стекла скорость берём на ячейку глубже в полости: грань на самой стенке
+// закрыта (скорость 0), и интерполяция с ней гасила отрыв от стекла — частицы
+// скользили по потолку и не падали. Убираем только движение в стекло.
+vec2 insideWall(vec2 p) {
+    float sd = cavitySd(p);
+    return sd > -uH ? p - cavityNormal(p) * (sd + uH) : p;
+}
+vec2 wallVel(vec2 p) {
+    vec2 v = sampleVel(uVel, insideWall(p));
+    float sd = cavitySd(p);
+    if (sd > -uH) {
+        vec2 n = cavityNormal(p);
+        float vn = dot(v, n);
+        if (vn > 0.0) v -= n * vn * smoothstep(-uH, -0.3 * uH, sd);
+    }
+    return v;
+}
 mat2 gradVel(vec2 p) {
     float e = 0.5 * uH;
     vec2 dx = (sampleVel(uVel, p + vec2(e, 0.0)) - sampleVel(uVel, p - vec2(e, 0.0))) / (2.0 * e);
@@ -173,12 +191,12 @@ void main() {
 
     if (M.x > 0.5) {
         if (uAdvect == 1) {
-            vec2 v = sampleVel(uVel, P.xy);
-            mat2 g = gradVel(P.xy);
+            vec2 v = wallVel(P.xy);
+            mat2 g = gradVel(insideWall(P.xy));
             P.zw = v;
             C = vec4(g[0].x, g[1].x, g[0].y, g[1].y);
             vec2 mid = P.xy + 0.5 * uDt * v;
-            P.xy += uDt * sampleVel(uVel, mid);
+            P.xy += uDt * wallVel(mid);
             float sd = cavitySd(P.xy);
             float margin = 0.3 * uH;
             if (sd > -margin) {

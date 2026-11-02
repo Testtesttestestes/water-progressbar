@@ -1,8 +1,10 @@
 import { Program, Target, drawFullscreen, UniformValue } from './gl';
-import { FS_BLUR_PHI, FS_HIGHLIGHTS, FS_SCENE, FS_BUBBLES, VS_BUBBLES, VS_FULLSCREEN_RENDER, VS_DROPS, FS_DROPS, FS_COPY } from './renderShaders';
+import { FS_BLUR_PHI, FS_HIGHLIGHTS, FS_SCENE, FS_BUBBLES, VS_BUBBLES, VS_FULLSCREEN_RENDER, VS_DROPS, FS_DROPS, FS_COPY, VS_WHITEWATER, FS_WHITEWATER_SPLAT, FS_WHITEWATER_COMPOSITE } from './renderShaders';
 import { BUBBLE_COUNT, Bubbles } from './bubbles';
 import { Caustics } from './caustics';
 import { SPRAY_COUNT, Spray } from './spray';
+import type { Whitewater } from './whitewater';
+import { PARTICLE_ROW } from './particles';
 import type { FluidSolver } from './solver';
 
 export interface FlaskView {
@@ -30,6 +32,9 @@ export class FluidRenderer {
   private blur: Program;
   private drops: Program;
   private copy: Program;
+  private whiteSplat: Program;
+  private whiteComposite: Program;
+  private whiteDensity: Target | null = null;
   private sceneTarget: Target | null = null;
   private blurTemp: Target | null = null;
   private caustics: Caustics | null = null;
@@ -42,6 +47,8 @@ export class FluidRenderer {
     this.blur = new Program(gl, VS_FULLSCREEN_RENDER, FS_BLUR_PHI);
     this.drops = new Program(gl, VS_DROPS, FS_DROPS);
     this.copy = new Program(gl, VS_FULLSCREEN_RENDER, FS_COPY);
+    this.whiteSplat = new Program(gl, VS_WHITEWATER, FS_WHITEWATER_SPLAT);
+    this.whiteComposite = new Program(gl, VS_FULLSCREEN_RENDER, FS_WHITEWATER_COMPOSITE);
   }
 
   /** Сглаживает копию φ для отрисовки (σ в ячейках). */
@@ -65,6 +72,7 @@ export class FluidRenderer {
     solver: FluidSolver;
     bubbles: Bubbles | null;
     spray?: Spray | null;
+    whitewater?: Whitewater | null;
     background: WebGLTexture;
     backgroundSize: [number, number];
     width: number;
@@ -136,6 +144,26 @@ export class FluidRenderer {
       this.bubbles.use({ ...common, uBubbles: opts.bubbles.texture });
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, BUBBLE_COUNT);
     }
+    if (opts.whitewater) {
+      // Карта плотности белой воды — в половинном разрешении (пятна мягкие).
+      const ww = Math.max(1, width >> 1), wh = Math.max(1, height >> 1);
+      if (!this.whiteDensity || this.whiteDensity.width !== ww || this.whiteDensity.height !== wh) {
+        this.whiteDensity?.dispose();
+        this.whiteDensity = new Target(gl, ww, wh, ['RGBA16F'], true);
+      }
+      this.whiteDensity.bind();
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      const [wa, wb] = opts.whitewater.textures;
+      this.whiteSplat.use({ ...common, uResolution: [ww, wh], uWA: wa, uWB: wb, uRow: PARTICLE_ROW });
+      gl.drawArrays(gl.POINTS, 0, opts.whitewater.count);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, width, height);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      this.whiteComposite.use({ uDensity: this.whiteDensity.texture, uResolution: [width, height] });
+      drawFullscreen(gl);
+    }
     if (opts.spray) {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       const [a, b] = opts.spray.textures;
@@ -157,6 +185,9 @@ export class FluidRenderer {
     this.caustics?.dispose();
     this.drops.dispose();
     this.copy.dispose();
+    this.whiteSplat.dispose();
+    this.whiteComposite.dispose();
+    this.whiteDensity?.dispose();
     this.sceneTarget?.dispose();
   }
 }

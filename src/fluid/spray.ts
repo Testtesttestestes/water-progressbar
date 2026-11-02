@@ -81,8 +81,15 @@ void main() {
         float sd = cavitySd(A.xy);
         if (sampleCell(uPhi, A.xy) < 0.0) {
             B.y = 0.0;                                   // упала в воду — слилась
+        } else if (sd > -B.x && dot(cavityNormal(A.xy), -uAccel) > 0.35 * length(uAccel)) {
+            // Потолок (стекло смотрит вниз): капля не прилипает — отскакивает и падает.
+            // Раньше прилипала и скользила по потолку — выглядело как «магнит».
+            vec2 n = cavityNormal(A.xy);
+            A.xy -= n * (sd + B.x);
+            float vn = dot(A.zw, n);
+            if (vn > 0.0) A.zw -= n * vn * 1.5;
         } else if (sd > -B.x || B.z > C.y) {
-            // Долетела до стекла: торец/дно контура или передняя/задняя стенка.
+            // Долетела до стекла: торец или дно контура, передняя/задняя стенка.
             if (sd > -B.x) A.xy -= cavityNormal(A.xy) * (sd + B.x);
             A.zw = vec2(0.0);
             B.y = 2.0; B.z = 0.0; B.w = mix(6.0, 16.0, C.x);
@@ -103,7 +110,12 @@ void main() {
         A.zw = dir * slide;
         A.xy += A.zw * uDt;
         float sd = cavitySd(A.xy);
-        if (sd > -B.x) A.xy -= cavityNormal(A.xy) * (sd + B.x);
+        if (sd > -B.x) {
+            vec2 n = cavityNormal(A.xy);
+            A.xy -= n * (sd + B.x);
+            // Под потолком капля не держится: срывается и падает брызгой.
+            if (dot(n, -uAccel) > 0.35 * g) { B.y = 1.0; C.y = 1e9; A.zw = vec2(0.0); }
+        }
         // Испарение: радиус уменьшается к концу срока.
         B.x = C.z * sqrt(max(1.0 - B.z / B.w, 0.0));
         if (B.z > B.w || B.x < 0.004 || sampleCell(uPhi, A.xy) < 0.3 * B.x) B.y = 0.0;

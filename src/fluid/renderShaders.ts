@@ -493,3 +493,82 @@ precision highp float;
 uniform sampler2D uSrc;
 out vec4 outColor;
 void main() { outColor = vec4(texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0).rgb, 1.0); }`;
+
+// Белая вода (whitewater.ts): частицы рисуются пятнами в карту плотности
+// (R — пена, G — брызги, B — пузыри), потом карта накладывается одним проходом:
+// пена из отдельных пузырьков сливается в сплошные белые пятна и полосы.
+export const VS_WHITEWATER = `${RENDER_COMMON}
+uniform sampler2D uWA;
+uniform sampler2D uWB;
+uniform int uRow;
+out vec3 vKind;
+out float vWeight;
+out float vSeed;
+void main() {
+    ivec2 id = ivec2(gl_VertexID % uRow, gl_VertexID / uRow);
+    vec4 A = texelFetch(uWA, id, 0);
+    vec4 B = texelFetch(uWB, id, 0);
+    float kind = B.x;
+    if (kind < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 1.0; return; }
+    vec2 world = uFlaskPos + rot(uFlaskAngle) * A.xy;
+    gl_Position = vec4(worldToScreen(world) * 2.0 - 1.0, 0.0, 1.0);
+    // Пятно пены шире самого пузырька: так соседние сливаются в слой.
+    float r = kind > 1.5 && kind < 2.5 ? 3.2 * B.w : (kind < 1.5 ? 1.6 * B.w : 1.4 * B.w);
+    gl_PointSize = clamp(2.0 * r / pixelWorld(), 2.0, 64.0);
+    vKind = vec3(kind > 1.5 && kind < 2.5 ? 1.0 : 0.0, kind < 1.5 ? 1.0 : 0.0, kind > 2.5 ? 1.0 : 0.0);
+    // Тающая пена бледнеет.
+    vWeight = kind > 1.5 && kind < 2.5 ? smoothstep(0.0, 1.0, B.y) : 1.0;
+    vSeed = B.z;
+}`;
+
+export const FS_WHITEWATER_SPLAT = `#version 300 es
+precision highp float;
+in vec3 vKind;
+in float vWeight;
+in float vSeed;
+out vec4 outColor;
+float h1(float x) { return fract(sin(x * 91.345 + vSeed * 417.13) * 43758.5453); }
+void main() {
+    vec2 q = gl_PointCoord * 2.0 - 1.0;
+    float d2 = dot(q, q);
+    if (d2 > 1.0) discard;
+    float w = exp(-3.0 * d2) * vWeight;
+    // Пена — не однородная белизна, а гроздь пузырьков: светлые плёнки-ободки и
+    // тёмные просветы между ними. Рисуем несколько пузырьков внутри пятна —
+    // узор едет вместе с пеной, а не «приклеен» к экрану.
+    float cluster = 0.0;
+    for (int k = 0; k < 4; k++) {
+        float fk = float(k);
+        vec2 c = vec2(h1(fk), h1(fk + 7.1)) * 1.1 - 0.55;
+        float r = 0.18 + 0.22 * h1(fk + 3.3);
+        float d = length(q - c);
+        cluster = max(cluster, smoothstep(r, r * 0.72, d) * (0.55 + 0.45 * smoothstep(r * 0.45, r * 0.95, d)));
+    }
+    float foam = vKind.x * w * (0.35 + 0.9 * cluster);
+    outColor = vec4(foam, vKind.yz * w, 0.0);
+}`;
+
+export const FS_WHITEWATER_COMPOSITE = `#version 300 es
+precision highp float;
+uniform sampler2D uDensity;
+uniform vec2 uResolution;
+out vec4 outColor;
+void main() {
+    vec2 uv = gl_FragCoord.xy / uResolution;
+    vec3 d = texture(uDensity, uv).rgb;
+    if (d.r + d.g + d.b < 1e-3) discard;
+    // Пена: плотная — почти белая и непрозрачная, редкая — серо-голубоватая дымка;
+    // снизу слоя (меньше света) чуть темнее — берём по градиенту плотности.
+    float foamA = 1.0 - exp(-0.9 * d.r);
+    float below = texture(uDensity, uv + vec2(0.0, 2.0 / uResolution.y)).r - d.r;
+    vec3 foamCol = mix(vec3(0.80, 0.86, 0.88), vec3(0.97, 0.98, 0.98), smoothstep(0.2, 2.0, d.r));
+    foamCol *= 1.0 - 0.08 * clamp(below, 0.0, 1.0);
+    // Брызги — мелкие светлые капли, пузыри в толще — светлая муть.
+    float sprayA = 1.0 - exp(-0.7 * d.g);
+    float bubbleA = 0.55 * (1.0 - exp(-0.5 * d.b));
+    vec3 col = foamCol * foamA;
+    float a = foamA;
+    col += vec3(0.95, 0.97, 1.0) * sprayA * (1.0 - a); a += sprayA * (1.0 - a);
+    col += vec3(0.86, 0.93, 0.96) * bubbleA * (1.0 - a); a += bubbleA * (1.0 - a);
+    outColor = vec4(col, a);
+}`;
