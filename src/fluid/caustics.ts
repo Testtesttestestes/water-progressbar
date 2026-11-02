@@ -65,10 +65,29 @@ void main() {
     for (int k = 1; k <= STEPS; k++) {
         float sk = uReach - 2.0 * uReach * float(k) / float(STEPS);
         float p = sampleCell(uPhi, side * u + uUp * sk);
-        if (prev > 0.0 && p <= 0.0) { s = sk + (2.0 * uReach / float(STEPS)) * p / (p - prev); found = 1.0; break; }
+        if (prev > 0.0 && p <= 0.0 && cavitySd(side * u + uUp * sk) < 0.0) { s = sk + (2.0 * uReach / float(STEPS)) * p / (p - prev); found = 1.0; break; }
         prev = p;
     }
-    o = vec4(s, found, 0.0, 0.0);
+    // Столбец целиком в воде (вода упёрлась в стекло): «поверхность» — верх
+    // полости; света через поверхность здесь нет, но через стекло — есть.
+    float full = 0.0;
+    if (found < 0.5) {
+        for (int k = 0; k <= STEPS; k++) {
+            float sk = uReach - 2.0 * uReach * float(k) / float(STEPS);
+            vec2 q = side * u + uUp * sk;
+            if (cavitySd(q) < 0.0) {
+                // Уточняем верх полости делением отрезка пополам.
+                float hi = sk + 2.0 * uReach / float(STEPS), lo = sk;
+                for (int b = 0; b < 12; b++) {
+                    float mid = 0.5 * (hi + lo);
+                    if (cavitySd(side * u + uUp * mid) < 0.0) lo = mid; else hi = mid;
+                }
+                if (sampleCell(uPhi, side * u + uUp * (lo - 0.08)) < 0.0) { s = lo; full = 1.0; }
+                break;
+            }
+        }
+    }
+    o = vec4(s, found, full, 0.0);
 }`;
 
 const VS_HEAD = `#version 300 es
@@ -148,12 +167,13 @@ float throughGlass(vec3 p, vec3 L) {
 }
 
 // Профиль хранится в RG32F: линейная фильтрация float-текстур есть не везде,
-// поэтому интерполируем сами. x — высота поверхности, y — найдена ли вода.
-vec2 profileAt(float u) {
+// поэтому интерполируем сами. x — высота поверхности, y — найдена ли граница,
+// z — столбец целиком в воде (тогда x — верх полости).
+vec3 profileAt(float u) {
     float t = clamp((u + uHalfU) / (2.0 * uHalfU), 0.0, 1.0) * float(${CAUSTIC_W - 1});
     int i = int(floor(t));
-    vec2 a = texelFetch(uProfile, ivec2(i, 0), 0).xy;
-    vec2 b = texelFetch(uProfile, ivec2(min(i + 1, ${CAUSTIC_W - 1}), 0), 0).xy;
+    vec3 a = texelFetch(uProfile, ivec2(i, 0), 0).xyz;
+    vec3 b = texelFetch(uProfile, ivec2(min(i + 1, ${CAUSTIC_W - 1}), 0), 0).xyz;
     return mix(a, b, t - float(i));
 }
 float surfaceAt(float u) { return profileAt(u).x; }
@@ -205,14 +225,29 @@ void main() {
     // Свет в систему колбы → через стекло → обратно в систему «вдоль поверхности/вверх».
     vec3 Lw = normalize(uLight);
     vec3 Lf = vec3(uSide * Lw.x + uUpL * Lw.y, Lw.z);
-    vec3 pf = vec3(uSide * u0 + uUpL * surfaceAt(u0), z0);
+    vec3 prof = profileAt(u0);
+    float full = prof.z;
+    vec3 pf = vec3(uSide * u0 + uUpL * (prof.x - 0.08 * full), z0);
     // Поверхность в сетке занимает всю глубину приёмника; для стекла берём ту же
     // долю ширины настоящего (круглого) сечения на этой высоте.
     vec3 pg = vec3(pf.xy, z0 / (0.5 * uDepth) * 0.97 * halfWidthZ(pf.xy));
     float glassT = throughGlass(pg, Lf);
-    float inside = smoothstep(0.0, 0.06, -sdRoundedBox(pf.xy, uCavityHalf, uCavityRadius)) * profileAt(u0).y;
+    float waterT = fresnelT(dot(n, -Lw), 1.0 / 1.333);
+    if (full > 0.5) {
+        // Вода упёрлась в стекло: свободной поверхности нет, ряби тоже. Свет идёт
+        // стекло → вода, преломляясь по нормали стекла (пластинка: как воздух → вода).
+        vec2 e2 = vec2(0.003, 0.0);
+        vec2 gxy = vec2(sdRoundedBox(pf.xy + e2.xy, uCavityHalf, uCavityRadius) - sdRoundedBox(pf.xy - e2.xy, uCavityHalf, uCavityRadius),
+                        sdRoundedBox(pf.xy + e2.yx, uCavityHalf, uCavityRadius) - sdRoundedBox(pf.xy - e2.yx, uCavityHalf, uCavityRadius));
+        gxy = normalize(gxy + 1e-9);
+        n = normalize(vec3(dot(gxy, uSide), dot(gxy, uUpL), 0.0));
+        float cosO = max(dot(n, -Lw), 0.0);
+        float cosG = sqrt(1.0 - (1.0 - cosO * cosO) / 2.25);
+        glassT = cosO > 0.0 ? fresnelT(cosO, 1.0 / 1.5) : 0.0;
+        waterT = fresnelT(cosG, 1.5 / 1.333);
+    }
+    float inside = smoothstep(0.0, 0.06, -sdRoundedBox(pf.xy, uCavityHalf, uCavityRadius)) * clamp(prof.y + full, 0.0, 1.0);
     vec3 Lin = Lw;
-    float waterT = fresnelT(dot(n, -Lin), 1.0 / 1.333);
     vec3 landed = land(pf, toFlask(refract(Lin, n, 1.0 / 1.333)));
     vNew = landed.xy;
     vHit = landPoint;
@@ -231,6 +266,10 @@ void main() {
     // стенка отвёрнута от света или ловит полное отражение — там тень.
     int quad = gl_VertexID / 6, corner = gl_VertexID % 6;
     int qi = quad % ${WALL_U}, qj = quad / ${WALL_U};
+    // Две половины сетки: передняя (z > 0) и задняя (z < 0) стороны стенки.
+    // Освещена любая часть выпуклой стенки, повёрнутая к свету.
+    float zSide = qj < ${WALL_D} ? 1.0 : -1.0;
+    qj = qj % ${WALL_D};
     ivec2 offs[6] = ivec2[6](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 0), ivec2(1, 1), ivec2(0, 1));
     ivec2 cell = ivec2(qi, qj) + offs[corner];
     float u = mix(-uHalfU, uHalfU, float(cell.x) / float(${WALL_U}));
@@ -239,14 +278,17 @@ void main() {
     vec2 xy = uSide * u + uUpL * y;                                // точка в системе колбы
     float R = 0.5 * uDepth;
     float ex = sdRoundedBox(xy, uCavityHalf, uCavityRadius) + R;
-    float weight = (ex < R - 0.02 && d > 0.02) ? profileAt(u).y : 0.0;
+    vec3 prof = profileAt(u);
+    float weight = (ex < R - 0.02 && d > 0.02) ? clamp(prof.y + prof.z, 0.0, 1.0) : 0.0;
     ex = clamp(ex, 0.0, R - 0.02);
-    // Внешняя поверхность стенки на стороне света (z > 0 — к зрителю, откуда светит).
-    float zOut = sqrt(max((R + uGlass) * (R + uGlass) - ex * ex, 0.0));
+    // Внешняя поверхность стенки (z > 0 — к зрителю, откуда светит).
+    float zOut = zSide * sqrt(max((R + uGlass) * (R + uGlass) - ex * ex, 0.0));
     vec3 po = vec3(xy, zOut);
     vec3 Lw = normalize(uLight);
     vec3 Lf = vec3(uSide * Lw.x + uUpL * Lw.y, Lw.z);
     vec3 no = flaskNormal(po, uGlass);
+    // В столбце, где вода у верхнего стекла, свет сверху уже учтён сеткой поверхности.
+    weight *= 1.0 - prof.z * smoothstep(0.35, 0.7, dot(no.xy, uUpL));
     float cosO = dot(no, -Lf);
     if (cosO <= 0.0) weight = 0.0;
     // Стенка — пластинка: стекло → вода с той же нормалью. Направление в воде
@@ -294,7 +336,7 @@ const mulberry = (seed: number) => () => {
 
 export class Caustics {
   readonly target: Target;
-  /** Высота поверхности вдоль колбы (x — высота по «вверх», y — нашлась ли вода). */
+  /** Высота поверхности вдоль колбы (x — высота по «вверх», y — нашлась ли граница, z — столбец в воде). */
   readonly profile: Target;
   private profileProgram: Program;
   private meshProgram: Program;
@@ -307,7 +349,7 @@ export class Caustics {
 
   constructor(private gl: WebGL2RenderingContext, private solver: FluidSolver, private glass = 0.1, seed = 5) {
     this.target = new Target(gl, CAUSTIC_W, CAUSTIC_H, ['RGBA16F'], true);
-    this.profile = new Target(gl, CAUSTIC_W, 1, ['RG32F']);
+    this.profile = new Target(gl, CAUSTIC_W, 1, ['RGBA32F']);
     this.profileProgram = new Program(gl, VS_FULLSCREEN, FS_PROFILE);
     this.meshProgram = new Program(gl, VS_MESH, FS_MESH);
     this.wallProgram = new Program(gl, VS_WALL, FS_MESH);
@@ -374,7 +416,7 @@ export class Caustics {
       this.meshProgram.use(light);
       gl.drawArrays(gl.TRIANGLES, 0, MESH_U * MESH_Z * 6);
       this.wallProgram.use(light);
-      gl.drawArrays(gl.TRIANGLES, 0, WALL_U * WALL_D * 6);
+      gl.drawArrays(gl.TRIANGLES, 0, WALL_U * WALL_D * 2 * 6);
     }
     gl.disable(gl.BLEND);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);

@@ -113,19 +113,19 @@ out vec4 outColor;
 // (u — вдоль поверхности, d — глубина под ней); 1 — ровный свет.
 uniform sampler2D uCaustics;
 uniform vec2 uCausticSize;   // (полудлина по u, глубина приёмника)
-uniform sampler2D uSurfaceProfile;   // RG32F, CAUSTIC_W×1: высота поверхности вдоль u
+uniform sampler2D uSurfaceProfile;   // RGBA32F, CAUSTIC_W×1: высота поверхности вдоль u, граница?, столбец в воде?
 // Глубина под поверхностью по профилю: φ — точное расстояние лишь у границы,
 // глубже оно ступенчатое, и каустики по нему шли бы полосами.
 float depthBelowSurface(vec2 local, vec2 side, float phi) {
     int w = textureSize(uSurfaceProfile, 0).x;
     float t = clamp(dot(local, side) / uCausticSize.x * 0.5 + 0.5, 0.0, 1.0) * float(w - 1);
     int i = int(floor(t));
-    vec2 a = texelFetch(uSurfaceProfile, ivec2(i, 0), 0).xy;
-    vec2 b = texelFetch(uSurfaceProfile, ivec2(min(i + 1, w - 1), 0), 0).xy;
-    vec2 s = mix(a, b, t - float(i));
+    vec3 a = texelFetch(uSurfaceProfile, ivec2(i, 0), 0).xyz;
+    vec3 b = texelFetch(uSurfaceProfile, ivec2(min(i + 1, w - 1), 0), 0).xyz;
+    vec3 s = mix(a, b, t - float(i));
     float fromProfile = s.x - dot(local, vec2(-side.y, side.x));
     // У самой поверхности (волны, брызги) — φ, глубже — профиль.
-    float k = s.y * smoothstep(0.05, 0.3, -phi);
+    float k = clamp(s.y + s.z, 0.0, 1.0) * smoothstep(0.05, 0.3, -phi);
     return max(mix(-phi, fromProfile, k), 0.0);
 }
 float causticAt(vec2 ud) {
@@ -371,3 +371,125 @@ void main() {
     }
     outColor = vec4(sum / wsum);
 }`;
+
+// Брызги и капли (spray.ts): экземпляры квадратов, 32 в строке текстуры состояния.
+// Квадрат ориентирован в мире (свет и вид — мировые), летящая капля вытянута
+// по скорости: за выдержку кадра она проходит больше своего размера.
+export const VS_DROPS = `${RENDER_COMMON}
+uniform sampler2D uSprayA;
+uniform sampler2D uSprayB;
+uniform float uShutter;        // выдержка, с
+out vec2 vQ;                   // координаты в капле: |q| = 1 — край
+out float vKind;
+out float vAlpha;
+out float vRadiusPx;
+out float vStretch;
+out vec2 vAxis;                // направление вытяжки (мир)
+out vec2 vCenterUV;
+out vec2 vRadiusUV;
+void main() {
+    ivec2 id = ivec2(gl_InstanceID % 32, gl_InstanceID / 32);
+    vec4 A = texelFetch(uSprayA, id, 0);
+    vec4 B = texelFetch(uSprayB, id, 0);
+    vec2 corner = vec2(gl_VertexID & 1, (gl_VertexID >> 1) & 1) * 2.0 - 1.0;
+    float kind = B.y;
+    float visible = kind > 0.5 ? 1.0 : 0.0;
+    // Капля на стекле тает к концу срока; брызга появляется не мгновенно.
+    if (kind > 1.5) visible *= 1.0 - smoothstep(0.75, 1.0, B.z / max(B.w, 1e-3));
+    float radius = max(B.x, 0.9 * pixelWorld());
+    vec2 vWorld = localToWorldDir(A.zw);
+    float speed = length(vWorld);
+    vec2 axis = speed > 1e-4 ? vWorld / speed : vec2(1.0, 0.0);
+    float streak = kind < 1.5 ? speed * uShutter * 0.5 : 0.0;
+    float stretch = 1.0 + streak / radius;
+    // Капля на стекле под тяжестью чуть оседает: вытянута вниз (или вдоль сползания).
+    if (kind > 1.5) {
+        axis = speed > 1e-3 ? axis : vec2(0.0, -1.0);
+        stretch = 1.0 + 0.14 * clamp(radius / 0.06, 0.0, 1.0);
+    }
+    vec2 center = uFlaskPos + rot(uFlaskAngle) * A.xy;
+    vec2 perp = vec2(-axis.y, axis.x);
+    vec2 world = center + (axis * corner.x * stretch + perp * corner.y) * radius * 1.15;
+    vec2 s = worldToScreen(world);
+    gl_Position = visible > 0.001 ? vec4(s * 2.0 - 1.0, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
+    // В фрагментном шейдере форма — круг в «несжатых» координатах.
+    vQ = corner * 1.15 * vec2(stretch, 1.0);
+    vKind = kind;
+    vAlpha = visible;
+    vRadiusPx = radius / pixelWorld();
+    vStretch = stretch;
+    vAxis = axis;
+    vCenterUV = worldToScreen(center);
+    vRadiusUV = worldOffsetToUV(vec2(radius));
+}`;
+
+// Капля — линза. Сквозь неё виден перевёрнутый уменьшенный вид сцены позади
+// (короткофокусная линза), у края — тёмная кайма (лучи у края уходят под
+// большими углами и видят тёмное окружение, плюс френелевское отражение),
+// сверху-слева — зеркальный блик источника, а напротив, внутри капли — светлое
+// пятно: капля фокусирует свет на стекло за собой. Капля на стекле — плоская
+// шапочка (краевой угол воды на стекле ~40–60°), брызга в воздухе — шар.
+export const FS_DROPS = `${RENDER_COMMON}
+uniform sampler2D uSceneTex;
+in vec2 vQ;
+in float vKind;
+in float vAlpha;
+in float vRadiusPx;
+in float vStretch;
+in vec2 vAxis;
+in vec2 vCenterUV;
+in vec2 vRadiusUV;
+out vec4 outColor;
+void main() {
+    // Вытянутая брызга: капсула вдоль оси; в её середине — сфера.
+    vec2 q = vQ;
+    float ext = vStretch - 1.0;
+    q.x = sign(q.x) * max(abs(q.x) - ext, 0.0);
+    float d = length(q);
+    float aa = 1.5 / max(vRadiusPx, 1.0);
+    float mask = 1.0 - smoothstep(1.0 - aa, 1.0, d);
+    if (mask <= 0.0) discard;
+    // В мировые оси: q.x — вдоль оси вытяжки.
+    vec2 qw = vAxis * q.x + vec2(-vAxis.y, vAxis.x) * q.y;
+    bool onGlass = vKind > 1.5;
+
+    float h = sqrt(max(1.0 - d * d, 0.0));
+    // Шапочка на стекле плоская: наклон поверхности у края ~ краевому углу.
+    vec3 n = onGlass ? normalize(vec3(qw * 0.75, h + 0.55)) : normalize(vec3(qw, h));
+    // Перевёрнутое изображение: точка сцены с противоположной стороны, шире капли.
+    float invert = onGlass ? 2.2 : 3.0;
+    vec2 off = -qw * vRadiusUV * invert;
+    vec3 seen = texture(uSceneTex, vCenterUV + off).rgb * 0.5
+              + texture(uSceneTex, vCenterUV + off * 1.15).rgb * 0.25
+              + texture(uSceneTex, vCenterUV + off * 0.85).rgb * 0.25;
+    // Вода в капле чуть поднимает контраст изображения (собирающая линза).
+    seen = (seen - 0.5) * 1.08 + 0.52;
+    // Френель (n = 1.333): к краю растёт отражение окружения.
+    float cosV = clamp(n.z, 0.0, 1.0);
+    float F = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
+    vec3 env = background(vec2(vCenterUV.x, 1.0 - vCenterUV.y) + qw * 0.03) * 0.9 + 0.06;
+    vec3 col = mix(seen, env, F * (onGlass ? 0.6 : 1.0));
+    // Тёмная кайма: у брызги шире (шар), у капли на стекле — тонкая линия по
+    // контуру, где шапочка круче всего.
+    float rim = onGlass ? smoothstep(0.8, 0.99, d) : smoothstep(0.45, 0.95, d);
+    col *= mix(1.0, onGlass ? 0.5 : 0.3, rim);
+    // Блик: отражение источника (свет приходит сверху-слева-спереди).
+    vec3 L = normalize(vec3(-0.3, 1.0, 0.85));
+    vec3 Hv = normalize(L + vec3(0.0, 0.0, 1.0));
+    float nh = max(dot(n, Hv), 0.0);
+    float spec = pow(nh, onGlass ? 160.0 : 220.0) * 1.6 + pow(nh, 18.0) * 0.08;
+    // Свет, сфокусированный каплей, — светлый серп с противоположной стороны.
+    vec2 g = qw + L.xy * 0.42;
+    float focus = exp(-dot(g, g) / (onGlass ? 0.09 : 0.05)) * (onGlass ? 0.32 : 0.22);
+    col += vec3(1.0, 0.99, 0.95) * (spec + focus);
+    // Брызга размазана выдержкой: энергия на большей площади.
+    float a = mask * vAlpha * (onGlass ? 1.0 : 1.0 / sqrt(vStretch));
+    outColor = vec4(col * a, a);
+}`;
+
+// Копия текстуры сцены на экран.
+export const FS_COPY = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+out vec4 outColor;
+void main() { outColor = vec4(texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0).rgb, 1.0); }`;

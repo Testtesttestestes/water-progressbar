@@ -1,7 +1,8 @@
 import { Program, Target, drawFullscreen, UniformValue } from './gl';
-import { FS_BLUR_PHI, FS_HIGHLIGHTS, FS_SCENE, FS_BUBBLES, VS_BUBBLES, VS_FULLSCREEN_RENDER } from './renderShaders';
+import { FS_BLUR_PHI, FS_HIGHLIGHTS, FS_SCENE, FS_BUBBLES, VS_BUBBLES, VS_FULLSCREEN_RENDER, VS_DROPS, FS_DROPS, FS_COPY } from './renderShaders';
 import { BUBBLE_COUNT, Bubbles } from './bubbles';
 import { Caustics } from './caustics';
+import { SPRAY_COUNT, Spray } from './spray';
 import type { FluidSolver } from './solver';
 
 export interface FlaskView {
@@ -21,12 +22,15 @@ export interface Camera {
   height: number;
 }
 
-/** Отрисовка колбы с водой: сцена → пузырьки → блики стекла. */
+/** Отрисовка колбы с водой: сцена → пузырьки → брызги и капли → блики стекла. */
 export class FluidRenderer {
   private scene: Program;
   private highlights: Program;
   private bubbles: Program;
   private blur: Program;
+  private drops: Program;
+  private copy: Program;
+  private sceneTarget: Target | null = null;
   private blurTemp: Target | null = null;
   private caustics: Caustics | null = null;
   private causticsFor: FluidSolver | null = null;
@@ -36,6 +40,8 @@ export class FluidRenderer {
     this.highlights = new Program(gl, VS_FULLSCREEN_RENDER, FS_HIGHLIGHTS);
     this.bubbles = new Program(gl, VS_BUBBLES, FS_BUBBLES);
     this.blur = new Program(gl, VS_FULLSCREEN_RENDER, FS_BLUR_PHI);
+    this.drops = new Program(gl, VS_DROPS, FS_DROPS);
+    this.copy = new Program(gl, VS_FULLSCREEN_RENDER, FS_COPY);
   }
 
   /** Сглаживает копию φ для отрисовки (σ в ячейках). */
@@ -58,6 +64,7 @@ export class FluidRenderer {
   render(opts: {
     solver: FluidSolver;
     bubbles: Bubbles | null;
+    spray?: Spray | null;
     background: WebGLTexture;
     backgroundSize: [number, number];
     width: number;
@@ -106,11 +113,21 @@ export class FluidRenderer {
       uCausticSize: [solver.cavityHalf[0], this.caustics.maxDepth],
     };
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, width, height);
+    // Сцену — в текстуру: капли преломляют то, что за ними (вода, стекло, комната).
+    if (!this.sceneTarget || this.sceneTarget.width !== width || this.sceneTarget.height !== height) {
+      this.sceneTarget?.dispose();
+      this.sceneTarget = new Target(gl, width, height, ['RGBA8'], true);
+    }
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
+    this.sceneTarget.bind();
     this.scene.use(common);
+    drawFullscreen(gl);
+    // Копия на экран проходом, а не blitFramebuffer: тот не пишет в
+    // экранный буфер со сглаживанием (multisample).
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, width, height);
+    this.copy.use({ uSrc: this.sceneTarget.texture });
     drawFullscreen(gl);
 
     gl.enable(gl.BLEND);
@@ -118,6 +135,12 @@ export class FluidRenderer {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       this.bubbles.use({ ...common, uBubbles: opts.bubbles.texture });
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, BUBBLE_COUNT);
+    }
+    if (opts.spray) {
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      const [a, b] = opts.spray.textures;
+      this.drops.use({ ...common, uSprayA: a, uSprayB: b, uShutter: 1 / 60, uSceneTex: this.sceneTarget.texture });
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, SPRAY_COUNT);
     }
     gl.blendFunc(gl.ONE, gl.ONE);
     this.highlights.use(common);
@@ -132,5 +155,8 @@ export class FluidRenderer {
     this.blur.dispose();
     this.blurTemp?.dispose();
     this.caustics?.dispose();
+    this.drops.dispose();
+    this.copy.dispose();
+    this.sceneTarget?.dispose();
   }
 }
