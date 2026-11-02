@@ -23,15 +23,19 @@ const H = 16;
 export const SPRAY_COUNT = W * H;
 const WET_TIME = 1.2;
 
+// Мокрым считаем только стекло, которого вода реально касалась: ячейки полости
+// (в стекле φ лишь продолжено и может «показывать» воду там, где её не было).
 const FS_WET = `${COMMON}
 uniform sampler2D uPhi;
 uniform sampler2D uWet;
+uniform sampler2D uGeo;
 uniform float uDt;
 void main() {
     ivec2 c = ivec2(gl_FragCoord.xy);
     float phi = texelFetch(uPhi, c, 0).x;
     float w = texelFetch(uWet, c, 0).x;
-    o = vec4(phi < 0.0 ? 1.0 : max(w - uDt / ${WET_TIME.toFixed(2)}, 0.0));
+    bool cavity = texelFetch(uGeo, c, 0).z > 0.0;
+    o = vec4(cavity && phi < 0.0 ? 1.0 : max(w - uDt / ${WET_TIME.toFixed(2)}, 0.0));
 }`;
 
 const FS_UPDATE = `${COMMON}
@@ -132,7 +136,9 @@ void main() {
         return;
     }
     // Плёнка рвётся там, где вода отступила заметно (дальше трёх ячеек).
-    float wet = sampleCell(uWet, p);
+    // Влажность — по самой ячейке (без размазывания на соседей): капля появляется
+    // только там, где вода действительно была.
+    float wet = cellAt(uWet, ivec2(floor((p - uOrigin) / uH)));
     if (phi > 3.0 * uH && wet > 0.02 && rnd(index, 10.0) < uDewetChance * wet) {
         float r = mix(0.012, 0.07, pow(rnd(index, 11.0), 1.6));
         if (sd > -r) return;
@@ -176,7 +182,7 @@ export class Spray {
     const grid = this.solver.gridUniforms();
 
     this.wet.write.bind();
-    this.wetProgram.use({ ...grid, uPhi: this.solver.phi.read.texture, uWet: this.wet.read.texture, uDt: dt });
+    this.wetProgram.use({ ...grid, uPhi: this.solver.phi.read.texture, uWet: this.wet.read.texture, uGeo: this.solver.geo.texture, uDt: dt });
     drawFullscreen(gl);
     this.wet.swap();
 
