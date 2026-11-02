@@ -108,6 +108,23 @@ export const FS_SCENE = `${RENDER_COMMON}
 uniform vec2 uUp;          // «вверх» в системе колбы (против эффективной тяжести)
 out vec4 outColor;
 
+// Ширина складки (мировые единицы) — область, где она работает как линза.
+const float RIDGE_WIDTH = 0.035;
+
+// Профиль складок: 0..1 на линиях поля f, которые идут наискосок и вьются;
+// шаг между ними «плавает», яркость меняется вдоль линии и гаснет с глубиной.
+float ridge(vec2 local, float phi) {
+    float t = uTime * 0.22;
+    vec2 q = vec2(0.87 * local.x - 0.5 * local.y, 0.5 * local.x + 0.87 * local.y);
+    float f = q.x * 1.1 + 0.45 * sin(0.8 * q.y + 0.5 * q.x + t)
+            + 0.18 * sin(1.9 * q.y - 0.8 * q.x - 0.7 * t)
+            + 0.9 * (noise(q * vec2(0.3, 0.45) + vec2(0.25 * t, -0.2 * t)) - 0.5);
+    float dist = abs(fract(f) - 0.5) / 1.1;          // расстояние до линии, мир
+    float along = 0.3 + 0.7 * smoothstep(0.2, 0.6, noise(q * vec2(0.35, 0.9) + vec2(t * 0.3, 3.0)));
+    float fade = mix(0.35, 1.0, exp(-max(-phi, 0.0) * 0.7));
+    return along * fade * exp(-pow((0.5 / 1.1 - dist) / RIDGE_WIDTH, 2.0));
+}
+
 void main() {
     vec2 uv = gl_FragCoord.xy / uResolution;
     vec2 world = screenToWorld(uv);
@@ -140,6 +157,20 @@ void main() {
     float facing = dot(nWater, uUp);
     float upward = smoothstep(0.15, 0.7, facing);
 
+    // ---------- нити-складки в воде ----------
+    // Тонкие складки (отражение ряби поверхности в толще) — это линзы: фон сквозь
+    // них сдвигается по градиенту профиля (рама окна за нитью изгибается), а свет
+    // фокусируется — светлая середина и тёмная кайма (знак кривизны профиля).
+    vec2 ridgeGrad = vec2(0.0);
+    float ridgeFocus = 0.0;
+    if (water > 0.0) {
+        float e = 0.75 * pw;
+        float h0 = ridge(local, phi), hx1 = ridge(local + vec2(e, 0.0), phi), hx0 = ridge(local - vec2(e, 0.0), phi);
+        float hy1 = ridge(local + vec2(0.0, e), phi), hy0 = ridge(local - vec2(0.0, e), phi);
+        ridgeGrad = vec2(hx1 - hx0, hy1 - hy0) / (2.0 * e);
+        ridgeFocus = -(hx1 + hx0 + hy1 + hy0 - 4.0 * h0) / (e * e);
+    }
+
     // ---------- преломление ----------
     // Полоса скругления сдвигает фон вдоль нормали; с водой внутри линза сильнее.
     float lens = 0.16 * slope2 * (1.0 + 0.9 * water);
@@ -147,40 +178,30 @@ void main() {
     // У поверхности воды фон изгибается по её нормали (вода — тонкая линза).
     float nearSurface = 1.0 - smoothstep(0.0, 0.25, abs(phi));
     refr += localToWorldDir(nWater) * 0.05 * nearSurface * water;
+    refr -= localToWorldDir(ridgeGrad) * RIDGE_WIDTH * 0.07 * water;
     vec2 ruv = uv + worldOffsetToUV(refr);
-    vec2 disp = worldOffsetToUV(nW) * 0.014 * slope2;
+    vec2 disp = worldOffsetToUV(nW) * 0.014 * slope2 + worldOffsetToUV(localToWorldDir(ridgeGrad)) * RIDGE_WIDTH * 0.012 * water;
     vec3 seen = vec3(background(ruv - disp).r, background(ruv).g, background(ruv + disp).b);
     // Сквозь толстое стекло на скосе фон чуть размыт.
     seen = mix(seen, backgroundBlur(ruv, 0.004), 0.55 * slope2);
 
     vec3 col = seen;
-    // Внутренние отражения стекла слегка высветляют всё, что видно сквозь колбу.
-    col = mix(col, vec3(1.0), 0.06);
-    // Воздух чуть «дымнее», вода — чище и холоднее.
-    col = mix(col, vec3(1.0), 0.03 * (1.0 - water));
-    col = mix(col, col * vec3(0.96, 1.0, 1.03) + vec3(0.012, 0.02, 0.026), water);
+    // Цвет: никакого подмешивания серого — оно и давало «мутность». Воздух в колбе
+    // лишь чуть светлее от отражений стекла; вода — чистый светофильтр: холодное
+    // пропускание, чуть больше насыщенности и контраста (вода собирает свет как линза).
+    col = mix(col, vec3(1.0), 0.015 * (1.0 - water));
+    vec3 graded = col * vec3(0.965, 1.0, 1.025);
+    float lum = dot(graded, vec3(0.2126, 0.7152, 0.0722));
+    graded = mix(vec3(lum), graded, 1.12);
+    graded = (graded - 0.5) * 1.07 + 0.5 + vec3(0.004, 0.012, 0.02);
     float deep = 1.0 - exp(-max(-phi, 0.0) * 0.45);
-    col = mix(col, vec3(0.84, 0.94, 0.95), 0.15 * deep * water);
+    graded *= mix(vec3(1.0), vec3(0.93, 1.0, 1.0), deep);
+    col = mix(col, clamp(graded, 0.0, 1.0), water);
 
-    // ---------- каустики ----------
-    // Свет, преломлённый волнистой поверхностью, ложится на заднюю стенку длинными
-    // плавными нитями — от поверхности вниз, с разрывами.
-    if (water > 0.0) {
-        float t = uTime * 0.22;
-        // Нити идут наискосок (сверху справа вниз налево) и слегка вьются.
-        vec2 q = vec2(0.87 * local.x - 0.5 * local.y, 0.5 * local.x + 0.87 * local.y);
-        // Шаг между нитями «плавает» (крупный шум), поэтому они не выглядят полосками.
-        float f = q.x * 1.1 + 0.45 * sin(0.8 * q.y + 0.5 * q.x + t)
-                + 0.18 * sin(1.9 * q.y - 0.8 * q.x - 0.7 * t)
-                + 0.9 * (noise(q * vec2(0.3, 0.45) + vec2(0.25 * t, -0.2 * t)) - 0.5);
-        float g = abs(fract(f) - 0.5);
-        float w = fwidth(f);
-        float filament = 1.0 - smoothstep(0.55 * w, 1.6 * w, 0.5 - g);
-        float depth = max(-phi, 0.0);
-        float along = 0.35 + 0.65 * smoothstep(0.2, 0.6, noise(q * vec2(0.35, 0.9) + vec2(t * 0.3, 3.0)));
-        float fade = mix(0.3, 1.0, exp(-depth * 0.7)) * along;
-        col += vec3(0.82, 0.93, 1.0) * filament * fade * 0.24 * water;
-    }
+    // Фокусировка света складками: ярко в середине, темнее по краям.
+    float focus = ridgeFocus * RIDGE_WIDTH * RIDGE_WIDTH;
+    col *= 1.0 - 0.18 * clamp(-focus, 0.0, 1.0) * water;
+    col += vec3(0.85, 0.94, 1.0) * 0.16 * clamp(focus, 0.0, 1.5) * water;
 
     // ---------- полоса поверхности ----------
     // Поверхность видна почти с ребра: задний и передний мениски, полное внутреннее
@@ -207,10 +228,10 @@ void main() {
         col = mix(wall, vec3(0.95, 0.97, 0.97), 0.12 + 0.12 * across);
     }
     // Мягкое светлое свечение вдоль внешнего контура (толща стекла под углом).
-    col = mix(col, vec3(0.98), 0.22 * exp(-depthIn / 0.035));
+    col = mix(col, vec3(0.98), 0.15 * exp(-depthIn / 0.035));
     // Скос рёбер: светлая полоса (снизу и у торцов шире) и лёгкое отражение комнаты.
     float rim = slope2 * (0.35 + 0.65 * max(bottomness, endness));
-    col = mix(col, vec3(0.97, 0.98, 0.98), 0.2 * rim);
+    col = mix(col, vec3(0.97, 0.98, 0.98), 0.1 * rim);
     vec3 env = backgroundBlur(vec2(uv.x, 1.0 - uv.y) + worldOffsetToUV(nW * 0.3), 0.02);
     col = mix(col, env * 1.1 + 0.05, (0.03 + 0.25 * pow(slope, 3.0)) * 0.5);
     // Бирюзовый оттенок толстого стекла на скосе (особенно снизу).
