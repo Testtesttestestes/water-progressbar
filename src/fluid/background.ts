@@ -43,3 +43,25 @@ export const loadBackground = (gl: WebGL2RenderingContext, url: string): Promise
     image.onerror = reject;
     image.src = url;
   });
+
+/** Текстура из уже загруженной картинки или холста (например, обои приложения). */
+export const textureFromSource = (gl: WebGL2RenderingContext, source: TexImageSource): BackgroundTexture => {
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  configure(gl);
+  const s = source as { naturalWidth?: number; naturalHeight?: number; videoWidth?: number; videoHeight?: number; width: number; height: number };
+  const w = s.naturalWidth || s.videoWidth || s.width, h = s.naturalHeight || s.videoHeight || s.height;
+  return { texture, size: [Math.max(1, w), Math.max(1, h)] };
+};
+
+/** Перезаливает текстуру из холста (снимок страницы). */
+export const updateTexture = (gl: WebGL2RenderingContext, target: BackgroundTexture, source: HTMLCanvasElement) => {
+  gl.bindTexture(gl.TEXTURE_2D, target.texture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  target.size = [Math.max(1, source.width), Math.max(1, source.height)];
+};
