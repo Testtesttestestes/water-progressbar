@@ -215,6 +215,19 @@ export class Spray {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
+  /** Убрать капли и брызги, стекло снова сухое. */
+  reset() {
+    const gl = this.gl;
+    const zero = new Float32Array(W * H * 4);
+    for (const t of [this.state.read, this.state.write]) for (let i = 0; i < 3; i++) t.upload(zero, i);
+    for (const t of [this.wet.read, this.wet.write]) {
+      t.bind();
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
   get textures(): WebGLTexture[] {
     return this.state.read.textures;
   }

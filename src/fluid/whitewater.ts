@@ -238,6 +238,12 @@ export class Whitewater {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
+  /** Убрать пену, брызги и пузыри. */
+  reset() {
+    const zero = new Float32Array(this.count * 4);
+    for (const t of [this.state.read, this.state.write]) for (let i = 0; i < 2; i++) t.upload(zero, i);
+  }
+
   get textures(): WebGLTexture[] {
     return this.state.read.textures;
   }

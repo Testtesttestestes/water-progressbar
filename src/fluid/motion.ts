@@ -19,6 +19,8 @@ export interface MotionTargets {
   tilt: number;
   /** Собственная частота первой моды колебаний воды, рад/с. */
   resonance: number;
+  /** Сила волн 0..1 (по умолчанию 1). */
+  strength?: number;
 }
 
 export interface Kinematics {
@@ -53,7 +55,7 @@ export class FlaskMotion {
     // вода трогается мягко, без толчка, как при плавном начале качания рукой.
     const rate = dt / Math.max(this.waveRamp, 1e-3);
     this.ramp = targets.waving ? Math.min(this.ramp + rate, 1) : Math.max(this.ramp - rate, 0);
-    this.amp = this.ramp * this.ramp * (3 - 2 * this.ramp);
+    this.amp = this.ramp * this.ramp * (3 - 2 * this.ramp) * Math.min(Math.max(targets.strength ?? 1, 0), 1);
 
     // Привод наклона: критически демпфированная пружина (без рывков и перелёта).
     const tiltAcc = TILT_OMEGA * TILT_OMEGA * (targets.tilt - this.tilt) - 2 * TILT_OMEGA * this.tiltVel;
