@@ -42,6 +42,13 @@ export interface FlaskOptions {
   backdropInterval?: number;
   /** 0..1: тёмная кайма стекла — для светлых ровных фонов (окна, диалоги). */
   edgeShade?: number;
+  /** За сколько секунд волны плавно выходят на полную силу. */
+  waveRamp?: number;
+  /**
+   * Камера едет вместе с колбой: колба неподвижна в кадре и вписана в холст вплотную
+   * (одинаковые поля), а качание и наклон вода чувствует как обычно — плещется внутри.
+   */
+  lockToFrame?: boolean;
   /** true — камера демо (колба в верхней части полноэкранного холста); false — колба вписана в холст. */
   fullscreen?: boolean;
 }
@@ -66,7 +73,7 @@ export class WaterFlask {
     this.live = { ...DEFAULT_LIVE, ...live };
     const {
       flaskWidth = 10, flaskHeight = 3, resolution = 1, background: bgSource = null, backgroundFit = 'cover',
-      backdrop = null, backdropInterval = 250, fullscreen = false, edgeShade = 0,
+      backdrop = null, backdropInterval = 250, fullscreen = false, edgeShade = 0, waveRamp, lockToFrame = false,
     } = options;
     const halfX = Math.max(1.5, flaskWidth / 2);
     const halfY = Math.max(0.8, flaskHeight / 2);
@@ -86,7 +93,7 @@ export class WaterFlask {
 
     const tilt0 = this.live.tiltAngle;
     let fill = Math.min(Math.max(this.live.progress, 0), 1);
-    const motion = new FlaskMotion(tilt0, FLASK_CENTER_Y);
+    const motion = new FlaskMotion(tilt0, FLASK_CENTER_Y, waveRamp);
 
     let solver: FluidSolver, bubbles: Bubbles, spray: Spray, whitewater: Whitewater, renderer: FluidRenderer;
     try {
@@ -144,6 +151,12 @@ export class WaterFlask {
     // Масштаб сглажен, чтобы кадр не «дышал» вместе с наклоном.
     let viewHeight = 0;
     const fitCamera = () => {
+      if (lockToFrame) {
+        // Колба вплотную к краям холста (запас — на сглаживание контура).
+        const aspect = canvas.width / Math.max(canvas.height, 1);
+        const fit = Math.max(2 * halfY, (2 * halfX) / aspect);
+        return { center: [0, FLASK_CENTER_Y] as [number, number], height: fit * (1 + 2.5 / Math.max(canvas.height, 1)) };
+      }
       const aspect = canvas.width / Math.max(canvas.height, 1);
       const c = Math.abs(Math.cos(kin.angle)), sn = Math.abs(Math.sin(kin.angle));
       const sway = this.live.isWaving ? 0.7 : 0.15;   // запас на качание колбы (motion.ts)
@@ -229,7 +242,9 @@ export class WaterFlask {
         solver, bubbles, spray, whitewater,
         background: background.texture, backgroundSize: background.size,
         width: canvas.width, height: canvas.height,
-        flask: { position: kin.position, angle: kin.angle, halfSize: [halfX, halfY], radius, glass, up: rotate(-kin.angle, [0, 1]) },
+        flask: lockToFrame
+          ? { position: [0, FLASK_CENTER_Y], angle: 0, halfSize: [halfX, halfY], radius, glass, up: rotate(-kin.angle, [0, 1]) }
+          : { position: kin.position, angle: kin.angle, halfSize: [halfX, halfY], radius, glass, up: rotate(-kin.angle, [0, 1]) },
         camera: fullscreen ? { center: [0, 0], height: VIEW_HEIGHT } : fitCamera(),
         time: simTime,
         // Пока первого снимка страницы нет — прозрачный режим, а не градиент.
