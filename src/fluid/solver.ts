@@ -1,5 +1,6 @@
 import { Program, PingPong, Target, VS_FULLSCREEN, drawFullscreen, UniformValue } from './gl';
 import * as S from './shaders';
+import { BandParticles } from './particles';
 
 // Несжимаемая двухфазная жидкость (вода + воздух) на сетке MAC в системе колбы.
 //
@@ -28,6 +29,8 @@ export interface FluidConfig {
   initialFill: number;
   /** Начальное направление «вверх» в системе колбы. */
   initialUp: [number, number];
+  /** Частицы узкой полосы у поверхности (гибрид NB-APIC). По умолчанию включены. */
+  particles?: boolean;
 }
 
 export interface StepInput {
@@ -88,6 +91,8 @@ export class FluidSolver {
   private airDensity: number;
   private firstStep = true;
   private up: [number, number];
+  /** Частицы полосы у поверхности; null — чисто сеточный расчёт. */
+  readonly particles: BandParticles | null = null;
 
   constructor(private gl: WebGL2RenderingContext, cfg: FluidConfig) {
     if (!gl.getExtension('EXT_color_buffer_float'))
@@ -161,6 +166,19 @@ export class FluidSolver {
       this.phi.swap();
       for (let i = 0; i < 12; i++) this.correctVolume(cfg.initialFill);
     });
+
+    if (cfg.particles !== false) {
+      (this as { particles: BandParticles | null }).particles = new BandParticles(gl, {
+        nx, ny, h: this.h, origin: this.origin, common: () => this.common(),
+      });
+      // Заселяем полосу у начальной поверхности.
+      this.withState(() => {
+        for (let i = 0; i < 8; i++) {
+          this.particles!.mergePhi(this.phi.read.texture, this.geo.texture, this.phi0);
+          this.particles!.maintain(this.phi.read.texture, this.vel.read.texture, this.geo.texture, 1);
+        }
+      });
+    }
   }
 
   private common(): Record<string, UniformValue> {
@@ -254,9 +272,17 @@ export class FluidSolver {
       });
       this.phi.swap();
 
-      // 2. Перенос скорости.
-      this.run('advectVel', this.velHat, { uVel: this.vel.read.texture, uDt: dt });
-      this.run('maccormackVel', this.vel.write, { uVel: this.vel.read.texture, uHat: this.velHat.texture, uDt: dt });
+      // 2. Перенос скорости. С частицами: в полосе у поверхности скорость граней —
+      //    от частиц (APIC), глубже — полулагранжев перенос по сетке (там течение
+      //    плавное, а MacCormack у стенок раскачивался). Без частиц — MacCormack.
+      const P = this.particles;
+      if (P) {
+        this.run('advectVel', this.velHat, { uVel: this.vel.read.texture, uDt: dt });
+        P.mergeVelocity(this.velHat.texture, this.geo.texture, this.vel.write);
+      } else {
+        this.run('advectVel', this.velHat, { uVel: this.vel.read.texture, uDt: dt });
+        this.run('maccormackVel', this.vel.write, { uVel: this.vel.read.texture, uHat: this.velHat.texture, uDt: dt });
+      }
       this.vel.swap();
 
       // 3. Тяжесть и силы инерции, непротекание стенок.
@@ -266,7 +292,12 @@ export class FluidSolver {
       });
       this.vel.swap();
 
-      // 4. Level set: продолжение в стекло, реинициализация, точный объём.
+      // 4. Level set: в полосе — объединение с поверхностью по частицам; затем
+      //    продолжение в стекло, реинициализация, точный объём.
+      if (P) {
+        P.mergePhi(this.phi.read.texture, this.geo.texture, this.phi.write);
+        this.phi.swap();
+      }
       this.extendPhi(this.phi0);
       this.run('reinit', this.phi.write, { uPhi: this.phi0.texture, uPhi0: this.phi0.texture, uGeo: this.geo.texture, uDtau: 0.3 * this.h });
       this.phi.swap();
@@ -275,6 +306,7 @@ export class FluidSolver {
       this.extendPhi(this.phi.write);
       this.phi.swap();
       this.correctVolume(input.fill);
+      if (P) P.maintain(this.phi.read.texture, this.vel.read.texture, this.geo.texture);
 
       // 5. Давление с переменной плотностью и проекция.
       this.run('beta', this.beta, {
@@ -295,6 +327,9 @@ export class FluidSolver {
         uGeo: this.geo.texture, uDt: dt,
       });
       this.vel.swap();
+
+      // 6. Сетка → частицы (APIC) и перенос частиц по новой скорости.
+      if (P) P.advect(this.vel.read.texture, this.phi.read.texture, this.geo.texture, dt);
     });
   }
 
@@ -338,6 +373,7 @@ export class FluidSolver {
   }
 
   dispose() {
+    this.particles?.dispose();
     Object.values(this.programs).forEach((p) => p.dispose());
     [this.vel, this.phi, this.pressure].forEach((t) => t.dispose());
     [this.velHat, this.phiHat, this.phi0, this.ext, this.beta, this.rhs, this.columns, this.total, this.geo, this.phiRender]

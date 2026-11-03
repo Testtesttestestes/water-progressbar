@@ -3,6 +3,7 @@ import { FluidSolver } from '../fluid/solver';
 import { FluidRenderer } from '../fluid/renderer';
 import { Bubbles } from '../fluid/bubbles';
 import { Spray } from '../fluid/spray';
+import { Whitewater } from '../fluid/whitewater';
 import { EARTH_GRAVITY, FlaskMotion, rotate, sloshingFrequency } from '../fluid/motion';
 import { BackgroundTexture, createFallbackBackground, loadBackground } from '../fluid/background';
 
@@ -21,6 +22,16 @@ interface RealisticProgressBarProps {
   flaskHeight?: number;
   /** Скорость наполнения: доля полной колбы в секунду. */
   fillSpeed?: number;
+  /**
+   * Фон, который видно сквозь воду: URL картинки или null — прозрачный холст
+   * (колба рисуется сама по себе, поверх любого интерфейса).
+   */
+  background?: string | null;
+  /**
+   * true — холст на весь экран (демо); false — заполняет родителя
+   * (родитель должен иметь размер и position: relative), камера держит колбу в кадре.
+   */
+  fullscreen?: boolean;
 }
 
 const BACKGROUND_URL = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
@@ -41,6 +52,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   flaskWidth = 10,
   flaskHeight = 3,
   fillSpeed = 0.35,
+  background: backgroundUrl = BACKGROUND_URL,
+  fullscreen = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Значения пропсов, которые меняются без пересоздания симуляции.
@@ -55,7 +68,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false });
+    const transparent = backgroundUrl === null;
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: true });
     if (!gl) {
       console.error('WebGL2 unsupported.');
       return;
@@ -70,7 +84,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     const motion = new FlaskMotion(tilt0, FLASK_CENTER_Y);
     const angle0 = -tilt0;
 
-    let solver: FluidSolver, bubbles: Bubbles, spray: Spray, renderer: FluidRenderer;
+    let solver: FluidSolver, bubbles: Bubbles, spray: Spray, whitewater: Whitewater, renderer: FluidRenderer;
     try {
       solver = new FluidSolver(gl, {
         halfSize: [halfX, halfY], radius, glass,
@@ -79,6 +93,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
       });
       bubbles = new Bubbles(gl, solver);
       spray = new Spray(gl, solver);
+      whitewater = new Whitewater(gl, solver);
       renderer = new FluidRenderer(gl);
     } catch (e) {
       console.error(e);
@@ -87,7 +102,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
 
     let background: BackgroundTexture = createFallbackBackground(gl);
     let disposed = false;
-    loadBackground(gl, BACKGROUND_URL)
+    if (backgroundUrl) loadBackground(gl, backgroundUrl)
       .then((bg) => {
         if (disposed) {
           gl.deleteTexture(bg.texture);
@@ -105,6 +120,19 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     // Сглаженное волнение воды: растит рябь (каустики) и пузырьки у поверхности.
     let waviness = 0;
     let kin = motion.step(0, { waving: false, tilt: tilt0, resonance: 1 });
+
+    // Камера встроенного режима: колба целиком в кадре при любом наклоне и качании.
+    // Масштаб сглажен, чтобы кадр не «дышал» вместе с наклоном.
+    let viewHeight = 0;
+    const fitCamera = () => {
+      const aspect = canvas.width / Math.max(canvas.height, 1);
+      const c = Math.abs(Math.cos(kin.angle)), sn = Math.abs(Math.sin(kin.angle));
+      const sway = 0.7;   // запас на качание колбы по горизонтали (motion.ts)
+      const bw = 2 * (halfX * c + halfY * sn) + 2 * sway, bh = 2 * (halfX * sn + halfY * c) + 0.4;
+      const target = 1.08 * Math.max(bh, bw / aspect);
+      viewHeight = viewHeight === 0 ? target : viewHeight + (target - viewHeight) * 0.05;
+      return { center: [0, FLASK_CENTER_Y] as [number, number], height: viewHeight };
+    };
 
     const loop = (now: number) => {
       if (disposed) return;
@@ -142,17 +170,19 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         const agitation = (Math.abs(kin.omegaDot) * solver.cavityHalf[0] + Math.hypot(kin.accel[0], kin.accel[1])) / Math.max(g, 1);
         bubbles.update(SIM_DT, rotate(-kin.angle, [0, 1]), 40 * agitation);
         spray.update(SIM_DT, accel, EARTH_GRAVITY);
+        whitewater.update(SIM_DT, accel, EARTH_GRAVITY);
         waviness += (Math.min(25 * agitation, 2) - waviness) * (1 - Math.exp(-SIM_DT / 1.5));
         simTime += SIM_DT;
       }
 
       renderer.render({
-        solver, bubbles, spray,
+        solver, bubbles, spray, whitewater,
         background: background.texture, backgroundSize: background.size,
         width: canvas.width, height: canvas.height,
         flask: { position: kin.position, angle: kin.angle, halfSize: [halfX, halfY], radius, glass, up: rotate(-kin.angle, [0, 1]) },
-        camera: { center: [0, 0], height: VIEW_HEIGHT },
+        camera: fullscreen ? { center: [0, 0], height: VIEW_HEIGHT } : fitCamera(),
         time: simTime,
+        transparent,
         gravity: g,
         agitation: waviness,
       });
@@ -167,20 +197,21 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
       solver.dispose();
       bubbles.dispose();
       spray.dispose();
+      whitewater.dispose();
       renderer.dispose();
     };
-  }, [halfX, halfY, radius, glass, resolution]);
+  }, [halfX, halfY, radius, glass, resolution, backgroundUrl, fullscreen]);
 
   return (
     <canvas
       ref={canvasRef}
       className={className}
       style={{
-        position: 'fixed',
+        position: fullscreen ? 'fixed' : 'absolute',
         top: 0,
         left: 0,
-        width: '100vw',
-        height: '100vh',
+        width: fullscreen ? '100vw' : '100%',
+        height: fullscreen ? '100vh' : '100%',
         display: 'block',
         zIndex: 0,
         pointerEvents: 'none',

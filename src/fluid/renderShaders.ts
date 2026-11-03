@@ -46,9 +46,21 @@ vec2 worldToScreen(vec2 w) { return (w - uViewCenter) / vec2(uViewHeight * aspec
 vec2 worldOffsetToUV(vec2 d) { return d / vec2(uViewHeight * aspect(), uViewHeight); }
 float pixelWorld() { return uViewHeight / uResolution.y; }
 
+// Фон: 0 — текстура; 1 — ровный цвет uBgColor (прозрачный режим: сцену рисуем
+// дважды, на чёрном и на белом, и восстанавливаем цвет и непрозрачность).
+uniform int uBgMode;
+uniform vec3 uBgColor;
 vec3 background(vec2 uv) {
+    if (uBgMode == 1) return uBgColor;
     vec2 bgUV = (uv - 0.5) * uBgScale + 0.5;
     return texture(uBg, clamp(bgUV, vec2(0.002), vec2(0.998))).rgb;
+}
+// Окружение для отражений. Без фона — мягкая «студия»: светлый верх, тёплый
+// тёмный низ. Отражение не должно зависеть от uBgColor, иначе оно стало бы прозрачностью.
+vec3 environment(vec2 uv) {
+    if (uBgMode == 0) return background(uv);
+    float t = clamp(uv.y, 0.0, 1.0);
+    return mix(vec3(0.34, 0.32, 0.30), vec3(0.92, 0.93, 0.94), smoothstep(0.15, 0.85, t));
 }
 
 // Размытый фон (для отражений и матовых участков).
@@ -167,6 +179,14 @@ void main() {
     float aa = max(fwidth(phi), pw);
     float water = (1.0 - smoothstep(-aa, aa, phi)) * step(sdI, 0.0);
     vec2 nWater = waterNormal(local);
+    // У самого стекла нормаль воды считалась бы по ячейкам внутри стекла (там φ лишь
+    // продолжено и может скачком меняться) — плавно переходим к «вверх».
+    float awayFromWall = smoothstep(0.02, 0.14, wallDist);
+    nWater = normalize(mix(uUp, nWater, awayFromWall));
+    // Сколько воды за стеклом: тонкая плёнка (волна на мгновение взбежала по стенке)
+    // почти не меняет преломление скоса — иначе оно резко удваивалось на пару кадров,
+    // и у стенки появлялся вытянутый сдвинутый кусок фона.
+    float waterDepth = smoothstep(0.0, 0.15, -phi) * step(sdI, 0.0);
     float facing = dot(nWater, uUp);
     float upward = smoothstep(0.15, 0.7, facing);
 
@@ -192,11 +212,11 @@ void main() {
 
     // ---------- преломление ----------
     // Полоса скругления сдвигает фон вдоль нормали; с водой внутри линза сильнее.
-    float lens = 0.16 * slope2 * (1.0 + 0.9 * water);
+    float lens = 0.16 * slope2 * (1.0 + 0.9 * waterDepth);
     vec2 refr = nW * lens;
     // У поверхности воды фон изгибается по её нормали (вода — тонкая линза).
     float nearSurface = 1.0 - smoothstep(0.0, 0.25, abs(phi));
-    refr += localToWorldDir(nWater) * 0.05 * nearSurface * water;
+    refr += localToWorldDir(nWater) * 0.05 * nearSurface * water * awayFromWall;
     refr -= localToWorldDir(ridgeGrad) * 0.0008 * water;
     vec2 ruv = uv + worldOffsetToUV(refr);
     vec2 disp = worldOffsetToUV(nW) * 0.014 * slope2 + worldOffsetToUV(localToWorldDir(ridgeGrad)) * 0.00015 * water;
@@ -251,7 +271,8 @@ void main() {
     // Скос рёбер: светлая полоса (снизу и у торцов шире) и лёгкое отражение комнаты.
     float rim = slope2 * (0.35 + 0.65 * max(bottomness, endness));
     col = mix(col, vec3(0.97, 0.98, 0.98), 0.1 * rim);
-    vec3 env = backgroundBlur(vec2(uv.x, 1.0 - uv.y) + worldOffsetToUV(nW * 0.3), 0.02);
+    vec2 envUV = vec2(uv.x, 1.0 - uv.y) + worldOffsetToUV(nW * 0.3);
+    vec3 env = uBgMode == 0 ? backgroundBlur(envUV, 0.02) : environment(envUV);
     col = mix(col, env * 1.1 + 0.05, (0.03 + 0.25 * pow(slope, 3.0)) * 0.5);
     // Бирюзовый оттенок толстого стекла на скосе (особенно снизу).
     col *= mix(vec3(1.0), vec3(0.9, 1.0, 0.98), slope2 * (0.3 + 0.7 * bottomness));
@@ -303,7 +324,8 @@ void main() {
     light += line(sdO, -0.035, 0.016) * arc * 0.6;
 
     light *= 1.0 - smoothstep(-pw, pw, sdO);
-    outColor = vec4(vec3(1.0, 0.99, 0.96) * light, 0.0);
+    // Альфа — чтобы на прозрачном холсте блик оставался светом, а не «пустотой».
+    outColor = vec4(vec3(1.0, 0.99, 0.96) * light, clamp(light, 0.0, 1.0));
 }`;
 
 // Пузырьки: экземпляры квадратов по текстуре состояния (32 в строке).
@@ -459,20 +481,25 @@ void main() {
     // Перевёрнутое изображение: точка сцены с противоположной стороны, шире капли.
     float invert = onGlass ? 2.2 : 3.0;
     vec2 off = -qw * vRadiusUV * invert;
-    vec3 seen = texture(uSceneTex, vCenterUV + off).rgb * 0.5
-              + texture(uSceneTex, vCenterUV + off * 1.15).rgb * 0.25
-              + texture(uSceneTex, vCenterUV + off * 0.85).rgb * 0.25;
+    vec4 seen4 = texture(uSceneTex, vCenterUV + off) * 0.5
+               + texture(uSceneTex, vCenterUV + off * 1.15) * 0.25
+               + texture(uSceneTex, vCenterUV + off * 0.85) * 0.25;
+    // Сцена — с предумноженной альфой. В прозрачном режиме за каплей может быть
+    // «ничего» (страница под холстом): там капля пропускает страницу как есть.
+    float seenA = max(seen4.a, 1e-3);
+    vec3 seen = seen4.rgb / seenA;
     // Вода в капле чуть поднимает контраст изображения (собирающая линза).
     seen = (seen - 0.5) * 1.08 + 0.52;
     // Френель (n = 1.333): к краю растёт отражение окружения.
     float cosV = clamp(n.z, 0.0, 1.0);
     float F = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
-    vec3 env = background(vec2(vCenterUV.x, 1.0 - vCenterUV.y) + qw * 0.03) * 0.9 + 0.06;
+    vec3 env = environment(vec2(vCenterUV.x, 1.0 - vCenterUV.y) + qw * 0.03) * 0.9 + 0.06;
     vec3 col = mix(seen, env, F * (onGlass ? 0.6 : 1.0));
     // Тёмная кайма: у брызги шире (шар), у капли на стекле — тонкая линия по
     // контуру, где шапочка круче всего.
     float rim = onGlass ? smoothstep(0.8, 0.99, d) : smoothstep(0.45, 0.95, d);
-    col *= mix(1.0, onGlass ? 0.5 : 0.3, rim);
+    float rimDark = mix(1.0, onGlass ? 0.5 : 0.3, rim);
+    col *= rimDark;
     // Блик: отражение источника (свет приходит сверху-слева-спереди).
     vec3 L = normalize(vec3(-0.3, 1.0, 0.85));
     vec3 Hv = normalize(L + vec3(0.0, 0.0, 1.0));
@@ -481,10 +508,15 @@ void main() {
     // Свет, сфокусированный каплей, — светлый серп с противоположной стороны.
     vec2 g = qw + L.xy * 0.42;
     float focus = exp(-dot(g, g) / (onGlass ? 0.09 : 0.05)) * (onGlass ? 0.32 : 0.22);
-    col += vec3(1.0, 0.99, 0.95) * (spec + focus);
+    vec3 light = vec3(1.0, 0.99, 0.95) * (spec + focus);
     // Брызга размазана выдержкой: энергия на большей площади.
     float a = mask * vAlpha * (onGlass ? 1.0 : 1.0 / sqrt(vStretch));
-    outColor = vec4(col * a, a);
+    // Непрозрачность капли: изображение сцены за ней (seenA), кайма и отражение
+    // видны и над пустотой. Без фона кайма — лёгкое затемнение страницы.
+    float own = max(seen4.a, max(1.0 - rimDark, F * 0.6));
+    float A = a * own;
+    vec3 body = col * seen4.a + env * F * 0.6 * (1.0 - seen4.a) * (onGlass ? 0.6 : 1.0);
+    outColor = vec4(body * a + light * a, A);
 }`;
 
 // Копия текстуры сцены на экран.
@@ -492,4 +524,99 @@ export const FS_COPY = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc;
 out vec4 outColor;
-void main() { outColor = vec4(texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0).rgb, 1.0); }`;
+void main() { outColor = texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0); }`;
+
+// Белая вода (whitewater.ts): частицы рисуются пятнами в карту плотности
+// (R — пена, G — брызги, B — пузыри), потом карта накладывается одним проходом:
+// пена из отдельных пузырьков сливается в сплошные белые пятна и полосы.
+export const VS_WHITEWATER = `${RENDER_COMMON}
+uniform sampler2D uWA;
+uniform sampler2D uWB;
+uniform int uRow;
+out vec3 vKind;
+out float vWeight;
+out float vSeed;
+void main() {
+    ivec2 id = ivec2(gl_VertexID % uRow, gl_VertexID / uRow);
+    vec4 A = texelFetch(uWA, id, 0);
+    vec4 B = texelFetch(uWB, id, 0);
+    float kind = B.x;
+    if (kind < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 1.0; return; }
+    vec2 world = uFlaskPos + rot(uFlaskAngle) * A.xy;
+    gl_Position = vec4(worldToScreen(world) * 2.0 - 1.0, 0.0, 1.0);
+    // Пятно пены шире самого пузырька: так соседние сливаются в слой.
+    float r = kind > 1.5 && kind < 2.5 ? 3.2 * B.w : (kind < 1.5 ? 1.6 * B.w : 1.4 * B.w);
+    gl_PointSize = clamp(2.0 * r / pixelWorld(), 2.0, 64.0);
+    vKind = vec3(kind > 1.5 && kind < 2.5 ? 1.0 : 0.0, kind < 1.5 ? 1.0 : 0.0, kind > 2.5 ? 1.0 : 0.0);
+    // Тающая пена бледнеет.
+    vWeight = kind > 1.5 && kind < 2.5 ? smoothstep(0.0, 1.0, B.y) : 1.0;
+    vSeed = B.z;
+}`;
+
+export const FS_WHITEWATER_SPLAT = `#version 300 es
+precision highp float;
+in vec3 vKind;
+in float vWeight;
+in float vSeed;
+out vec4 outColor;
+float h1(float x) { return fract(sin(x * 91.345 + vSeed * 417.13) * 43758.5453); }
+void main() {
+    vec2 q = gl_PointCoord * 2.0 - 1.0;
+    float d2 = dot(q, q);
+    if (d2 > 1.0) discard;
+    float w = exp(-3.0 * d2) * vWeight;
+    // Пена — не однородная белизна, а гроздь пузырьков: светлые плёнки-ободки и
+    // тёмные просветы между ними. Рисуем несколько пузырьков внутри пятна —
+    // узор едет вместе с пеной, а не «приклеен» к экрану.
+    float cluster = 0.0;
+    for (int k = 0; k < 4; k++) {
+        float fk = float(k);
+        vec2 c = vec2(h1(fk), h1(fk + 7.1)) * 1.1 - 0.55;
+        float r = 0.18 + 0.22 * h1(fk + 3.3);
+        float d = length(q - c);
+        cluster = max(cluster, smoothstep(r, r * 0.72, d) * (0.55 + 0.45 * smoothstep(r * 0.45, r * 0.95, d)));
+    }
+    float foam = vKind.x * w * (0.35 + 0.9 * cluster);
+    outColor = vec4(foam, vKind.yz * w, 0.0);
+}`;
+
+export const FS_WHITEWATER_COMPOSITE = `#version 300 es
+precision highp float;
+uniform sampler2D uDensity;
+uniform vec2 uResolution;
+out vec4 outColor;
+void main() {
+    vec2 uv = gl_FragCoord.xy / uResolution;
+    vec3 d = texture(uDensity, uv).rgb;
+    if (d.r + d.g + d.b < 1e-3) discard;
+    // Пена: плотная — почти белая и непрозрачная, редкая — серо-голубоватая дымка;
+    // снизу слоя (меньше света) чуть темнее — берём по градиенту плотности.
+    float foamA = 1.0 - exp(-0.9 * d.r);
+    float below = texture(uDensity, uv + vec2(0.0, 2.0 / uResolution.y)).r - d.r;
+    vec3 foamCol = mix(vec3(0.80, 0.86, 0.88), vec3(0.97, 0.98, 0.98), smoothstep(0.2, 2.0, d.r));
+    foamCol *= 1.0 - 0.08 * clamp(below, 0.0, 1.0);
+    // Брызги — мелкие светлые капли, пузыри в толще — светлая муть.
+    float sprayA = 1.0 - exp(-0.7 * d.g);
+    float bubbleA = 0.55 * (1.0 - exp(-0.5 * d.b));
+    vec3 col = foamCol * foamA;
+    float a = foamA;
+    col += vec3(0.95, 0.97, 1.0) * sprayA * (1.0 - a); a += sprayA * (1.0 - a);
+    col += vec3(0.86, 0.93, 0.96) * bubbleA * (1.0 - a); a += bubbleA * (1.0 - a);
+    outColor = vec4(col, a);
+}`;
+
+// Восстановление цвета и непрозрачности по двум кадрам: на чёрном (K) и на белом (W).
+// Кадр на фоне b: C = c + (1 − a)·b ⇒ c = K, a = 1 − (W − K). Результат —
+// с предумноженной альфой, как и всё, что рисуется поверх.
+export const FS_MATTE = `#version 300 es
+precision highp float;
+uniform sampler2D uBlack;
+uniform sampler2D uWhite;
+out vec4 outColor;
+void main() {
+    ivec2 c = ivec2(gl_FragCoord.xy);
+    vec3 k = texelFetch(uBlack, c, 0).rgb;
+    vec3 w = texelFetch(uWhite, c, 0).rgb;
+    float a = clamp(1.0 - dot(w - k, vec3(1.0 / 3.0)), 0.0, 1.0);
+    outColor = vec4(min(k, vec3(a)), a);
+}`;
