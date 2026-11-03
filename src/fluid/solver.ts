@@ -181,6 +181,34 @@ export class FluidSolver {
     }
   }
 
+  /**
+   * Сбросить воду к ровной поверхности с долей fill, без пересоздания текстур и
+   * шейдеров (их компиляция — самая долгая часть запуска). Для повторного
+   * использования одной колбы в нескольких окнах загрузки.
+   */
+  reset(fill: number, up: [number, number]) {
+    const gl = this.gl;
+    this.up = up;
+    this.firstStep = true;
+    this.withState(() => {
+      for (const t of [this.vel.read, this.vel.write, this.velHat, this.pressure.read, this.pressure.write]) {
+        t.bind();
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      this.run('planarPhi', this.phi.write, { uUp: this.up, uLevel: this.levelForFill(fill) });
+      this.phi.swap();
+      for (let i = 0; i < 12; i++) this.correctVolume(fill);
+      if (this.particles) {
+        this.particles.reset();
+        for (let i = 0; i < 8; i++) {
+          this.particles.mergePhi(this.phi.read.texture, this.geo.texture, this.phi0);
+          this.particles.maintain(this.phi.read.texture, this.vel.read.texture, this.geo.texture, 1);
+        }
+      }
+    });
+  }
+
   private common(): Record<string, UniformValue> {
     return {
       uN: [this.nx, this.ny],

@@ -24,6 +24,8 @@ export interface FlaskLive {
   fillSpeed: number;
   /** Полупрозрачная панель между фоном и колбой: [r, g, b, a], всё 0..1. */
   backgroundTint?: [number, number, number, number];
+  /** Сила волн 0..1 (по умолчанию 1). */
+  waveStrength?: number;
 }
 
 /** Параметры, при смене которых колбу нужно создать заново. */
@@ -67,6 +69,9 @@ export class WaterFlask {
   readonly ok: boolean = false;
   private live: FlaskLive;
   private disposeFn: () => void = () => {};
+  private pauseFn: () => void = () => {};
+  private resumeFn: () => void = () => {};
+  private resetFn: () => void = () => {};
   private loseContext: () => void = () => {};
 
   constructor(private canvas: HTMLCanvasElement, options: FlaskOptions = {}, live: Partial<FlaskLive> = {}) {
@@ -93,7 +98,7 @@ export class WaterFlask {
 
     const tilt0 = this.live.tiltAngle;
     let fill = Math.min(Math.max(this.live.progress, 0), 1);
-    const motion = new FlaskMotion(tilt0, FLASK_CENTER_Y, waveRamp);
+    let motion = new FlaskMotion(tilt0, FLASK_CENTER_Y, waveRamp);
 
     let solver: FluidSolver, bubbles: Bubbles, spray: Spray, whitewater: Whitewater, renderer: FluidRenderer;
     try {
@@ -195,8 +200,10 @@ export class WaterFlask {
       last = now;
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
-      const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+      // Холст вне страницы (прогрев заранее) — размер не трогаем: его задал владелец.
+      const attached = canvas.clientWidth > 0 && canvas.clientHeight > 0;
+      const w = attached ? Math.max(1, Math.floor(canvas.clientWidth * dpr)) : canvas.width;
+      const h = attached ? Math.max(1, Math.floor(canvas.clientHeight * dpr)) : canvas.height;
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
@@ -217,7 +224,7 @@ export class WaterFlask {
         fill += Math.min(Math.max(target - fill, -2 * maxDelta), maxDelta);
 
         const resonance = 0.92 * sloshingFrequency(g, solver.cavityHalf[0], fill * 2 * solver.cavityHalf[1]);
-        kin = motion.step(SIM_DT, { waving: params.isWaving, tilt: params.tiltAngle, resonance });
+        kin = motion.step(SIM_DT, { waving: params.isWaving, tilt: params.tiltAngle, resonance, strength: params.waveStrength });
         // Тяжесть минус ускорение колбы — в систему колбы.
         const accel = rotate(-kin.angle, [-kin.accel[0], -g - kin.accel[1]]);
         solver.step({ dt: SIM_DT, accel, omega: kin.omega, omegaDot: kin.omegaDot, fill });
@@ -255,9 +262,34 @@ export class WaterFlask {
         agitation: waviness,
         edgeShade,
       });
+      if (!paused) frame = requestAnimationFrame(loop);
+    };
+    let paused = false;
+    frame = requestAnimationFrame(loop);
+
+    this.pauseFn = () => {
+      paused = true;
+      cancelAnimationFrame(frame);
+    };
+    this.resumeFn = () => {
+      if (!paused || disposed) return;
+      paused = false;
+      last = null;   // без скачка времени за паузу
       frame = requestAnimationFrame(loop);
     };
-    frame = requestAnimationFrame(loop);
+    this.resetFn = () => {
+      const p = this.live;
+      fill = Math.min(Math.max(p.progress, 0), 1);
+      motion = new FlaskMotion(p.tiltAngle, FLASK_CENTER_Y, waveRamp);
+      kin = motion.step(0, { waving: false, tilt: p.tiltAngle, resonance: 1 });
+      accumulator = 0;
+      waviness = 0;
+      viewHeight = 0;
+      last = null;
+      solver.reset(fill, rotate(p.tiltAngle, [0, 1]));
+      spray.reset();
+      whitewater.reset();
+    };
 
     this.disposeFn = () => {
       disposed = true;
@@ -271,6 +303,25 @@ export class WaterFlask {
       renderer.dispose();
     };
     this.loseContext = () => gl.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+
+  /** Остановить расчёт и отрисовку (колба ждёт следующего показа, ресурсы остаются). */
+  pause() {
+    this.pauseFn();
+  }
+
+  /** Продолжить после pause(). */
+  resume() {
+    this.resumeFn();
+  }
+
+  /**
+   * Начать заново: ровная вода на уровне live.progress, колба в покое. Шейдеры и
+   * текстуры остаются — это мгновенно, в отличие от создания новой колбы.
+   */
+  reset(live: Partial<FlaskLive> = {}) {
+    this.live = { ...this.live, ...live };
+    this.resetFn();
   }
 
   /** Обновить параметры без пересоздания (прогресс, волны, наклон…). */

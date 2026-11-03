@@ -328,6 +328,12 @@ export class BandParticles {
     this.pass(true, { uPhi: phi, uVel: vel, uGeo: geo, uDt: dt, uSeedChance: 0 });
   }
 
+  /** Убрать все частицы (заселение заново — через maintain). */
+  reset() {
+    const zero = new Float32Array(this.count * 4);
+    for (const t of [this.state.read, this.state.write]) for (let i = 0; i < 3; i++) t.upload(zero, i);
+  }
+
   get textures(): WebGLTexture[] {
     return this.state.read.textures;
   }
