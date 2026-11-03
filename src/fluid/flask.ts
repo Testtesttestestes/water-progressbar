@@ -40,6 +40,8 @@ export interface FlaskOptions {
   backdrop?: HTMLElement | null;
   /** Как часто можно переснимать backdrop, мс. */
   backdropInterval?: number;
+  /** 0..1: тёмная кайма стекла — для светлых ровных фонов (окна, диалоги). */
+  edgeShade?: number;
   /** true — камера демо (колба в верхней части полноэкранного холста); false — колба вписана в холст. */
   fullscreen?: boolean;
 }
@@ -64,7 +66,7 @@ export class WaterFlask {
     this.live = { ...DEFAULT_LIVE, ...live };
     const {
       flaskWidth = 10, flaskHeight = 3, resolution = 1, background: bgSource = null, backgroundFit = 'cover',
-      backdrop = null, backdropInterval = 250, fullscreen = false,
+      backdrop = null, backdropInterval = 250, fullscreen = false, edgeShade = 0,
     } = options;
     const halfX = Math.max(1.5, flaskWidth / 2);
     const halfY = Math.max(0.8, flaskHeight / 2);
@@ -147,7 +149,11 @@ export class WaterFlask {
       const sway = this.live.isWaving ? 0.7 : 0.15;   // запас на качание колбы (motion.ts)
       const bw = 2 * (halfX * c + halfY * sn) + 2 * sway, bh = 2 * (halfX * sn + halfY * c) + 0.3;
       const target = 1.06 * Math.max(bh, bw / aspect);
-      viewHeight = viewHeight === 0 ? target : viewHeight + (target - viewHeight) * 0.05;
+      // Отдаляемся быстро (колба не вылезает из кадра), приближаемся медленно —
+      // при покачивании кадр не «дышит».
+      viewHeight = viewHeight === 0 ? target : target > viewHeight
+        ? viewHeight + (target - viewHeight) * 0.2
+        : viewHeight + (target - viewHeight) * 0.004;
       return { center: [0, FLASK_CENTER_Y] as [number, number], height: viewHeight };
     };
 
@@ -232,6 +238,7 @@ export class WaterFlask {
         page: dom && dom.snapshot ? backdropRect() : backgroundFit === 'page' && !transparent ? pageRect() : undefined,
         gravity: g,
         agitation: waviness,
+        edgeShade,
       });
       frame = requestAnimationFrame(loop);
     };
