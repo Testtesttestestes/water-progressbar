@@ -85,6 +85,8 @@ export class FluidRenderer {
     page?: { rect: [number, number, number, number]; viewport: [number, number]; fit?: 'cover' | 'stretch' };
     /** Цвет (0..1) и непрозрачность панели, лежащей между фоном и колбой. */
     backgroundTint?: [number, number, number, number];
+    /** 0..1: тёмная кайма стекла, чтобы колба читалась на светлом ровном фоне. */
+    edgeShade?: number;
     bubbles: Bubbles | null;
     spray?: Spray | null;
     whitewater?: Whitewater | null;
@@ -143,6 +145,7 @@ export class FluidRenderer {
       uBg: opts.background,
       uBgMap: bgMap,
       uBgTint: opts.backgroundTint ?? [0, 0, 0, 0],
+      uEdgeShade: opts.edgeShade ?? 0,
       uCutout: opts.page && !opts.transparent ? 1 : 0,
       uTime: opts.time,
       uUp: flask.up,
