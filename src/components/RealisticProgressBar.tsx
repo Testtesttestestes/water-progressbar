@@ -5,7 +5,7 @@ import { Bubbles } from '../fluid/bubbles';
 import { Spray } from '../fluid/spray';
 import { Whitewater } from '../fluid/whitewater';
 import { EARTH_GRAVITY, FlaskMotion, rotate, sloshingFrequency } from '../fluid/motion';
-import { BackgroundTexture, createFallbackBackground, loadBackground } from '../fluid/background';
+import { BackgroundTexture, createFallbackBackground, loadBackground, textureFromSource } from '../fluid/background';
 
 interface RealisticProgressBarProps {
   /** Доля воды 0..1. */
@@ -23,10 +23,22 @@ interface RealisticProgressBarProps {
   /** Скорость наполнения: доля полной колбы в секунду. */
   fillSpeed?: number;
   /**
-   * Фон, который видно сквозь воду: URL картинки или null — прозрачный холст
-   * (колба рисуется сама по себе, поверх любого интерфейса).
+   * Фон, который преломляется в стекле и воде: URL картинки, готовая картинка/холст
+   * или null — прозрачный холст без преломления (WebGL не видит страницу под собой).
    */
-  background?: string | null;
+  background?: string | TexImageSource | null;
+  /**
+   * 'cover' — фон натянут на холст (демо). 'page' — фон натянут на окно браузера
+   * и выровнен с положением холста на странице: передайте ту же картинку, что
+   * лежит фоном страницы (обои приложения), и стекло будет искажать именно то,
+   * что за ним. Вне колбы холст прозрачный.
+   */
+  backgroundFit?: 'cover' | 'page';
+  /**
+   * Полупрозрачная панель между фоном и колбой: [r, g, b, a], всё 0..1.
+   * Например, карточка rgba(255,255,255,.25) → [1, 1, 1, 0.25].
+   */
+  backgroundTint?: [number, number, number, number];
   /**
    * true — холст на весь экран (демо); false — заполняет родителя
    * (родитель должен иметь размер и position: relative), камера держит колбу в кадре.
@@ -53,12 +65,14 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   flaskHeight = 3,
   fillSpeed = 0.35,
   background: backgroundUrl = BACKGROUND_URL,
+  backgroundFit = 'cover',
+  backgroundTint,
   fullscreen = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Значения пропсов, которые меняются без пересоздания симуляции.
-  const live = useRef({ progress, isWaving, tiltAngle, gravityScale, fillSpeed });
-  live.current = { progress, isWaving, tiltAngle, gravityScale, fillSpeed };
+  const live = useRef({ progress, isWaving, tiltAngle, gravityScale, fillSpeed, backgroundTint });
+  live.current = { progress, isWaving, tiltAngle, gravityScale, fillSpeed, backgroundTint };
 
   const halfX = Math.max(1.5, flaskWidth / 2);
   const halfY = Math.max(0.8, flaskHeight / 2);
@@ -102,7 +116,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
 
     let background: BackgroundTexture = createFallbackBackground(gl);
     let disposed = false;
-    if (backgroundUrl) loadBackground(gl, backgroundUrl)
+    if (typeof backgroundUrl === 'string') loadBackground(gl, backgroundUrl)
       .then((bg) => {
         if (disposed) {
           gl.deleteTexture(bg.texture);
@@ -111,7 +125,20 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         gl.deleteTexture(background.texture);
         background = bg;
       })
-      .catch(() => { /* остаётся запасной градиент */ });
+      .catch(() => {
+        // Частая причина — сервер картинки не разрешает загрузку с другого сайта (CORS):
+        // тогда остаётся ровный градиент, и преломлять стеклу нечего.
+        console.warn(`RealisticProgressBar: background "${backgroundUrl}" did not load (CORS or network); using a plain gradient, so the glass shows no distortion.`);
+      });
+    else if (backgroundUrl) {
+      try {
+        gl.deleteTexture(background.texture);
+        background = textureFromSource(gl, backgroundUrl);
+      } catch (e) {
+        console.warn('RealisticProgressBar: background source could not be used (cross-origin image without CORS?).', e);
+        background = createFallbackBackground(gl);
+      }
+    }
 
     let frame = 0;
     let last: number | null = null;
@@ -132,6 +159,14 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
       const target = 1.08 * Math.max(bh, bw / aspect);
       viewHeight = viewHeight === 0 ? target : viewHeight + (target - viewHeight) * 0.05;
       return { center: [0, FLASK_CENTER_Y] as [number, number], height: viewHeight };
+    };
+
+    const pageRect = () => {
+      const r = canvas.getBoundingClientRect();
+      return {
+        rect: [r.left, r.top, r.width, r.height] as [number, number, number, number],
+        viewport: [window.innerWidth, window.innerHeight] as [number, number],
+      };
     };
 
     const loop = (now: number) => {
@@ -183,6 +218,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         camera: fullscreen ? { center: [0, 0], height: VIEW_HEIGHT } : fitCamera(),
         time: simTime,
         transparent,
+        backgroundTint: params.backgroundTint,
+        page: backgroundFit === 'page' && !transparent ? pageRect() : undefined,
         gravity: g,
         agitation: waviness,
       });
@@ -200,7 +237,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
       whitewater.dispose();
       renderer.dispose();
     };
-  }, [halfX, halfY, radius, glass, resolution, backgroundUrl, fullscreen]);
+  }, [halfX, halfY, radius, glass, resolution, backgroundUrl, backgroundFit, fullscreen]);
 
   return (
     <canvas

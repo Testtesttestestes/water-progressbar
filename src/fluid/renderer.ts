@@ -77,6 +77,14 @@ export class FluidRenderer {
     /** Прозрачный режим: фон не рисуется, холст с альфой — колбу можно положить
      *  поверх любого интерфейса. background тогда не используется. */
     transparent?: boolean;
+    /**
+     * Фон выровнен со страницей: картинка натянута «cover» на окно браузера, а холст —
+     * его часть (pageRect: x, y, w, h в CSS-пикселях от левого верхнего угла окна,
+     * viewport: размер окна). Вне колбы холст прозрачный.
+     */
+    page?: { rect: [number, number, number, number]; viewport: [number, number] };
+    /** Цвет (0..1) и непрозрачность панели, лежащей между фоном и колбой. */
+    backgroundTint?: [number, number, number, number];
     bubbles: Bubbles | null;
     spray?: Spray | null;
     whitewater?: Whitewater | null;
@@ -105,7 +113,19 @@ export class FluidRenderer {
     // «cover»: фон заполняет холст без растяжения.
     const canvasAspect = width / height;
     const bgAspect = opts.backgroundSize[0] / opts.backgroundSize[1];
-    const bgScale: [number, number] = canvasAspect > bgAspect ? [1, bgAspect / canvasAspect] : [canvasAspect / bgAspect, 1];
+    const cover = (aspect: number): [number, number] => (aspect > bgAspect ? [1, bgAspect / aspect] : [aspect / bgAspect, 1]);
+    let bgMap: [number, number, number, number];
+    if (opts.page) {
+      // uv холста → uv окна (у DOM y вниз, у WebGL вверх) → cover по окну.
+      const [rx, ry, rw, rh] = opts.page.rect, [vw, vh] = opts.page.viewport;
+      const ax = rw / vw, bx = rx / vw;
+      const ay = rh / vh, by = 1 - (ry + rh) / vh;
+      const cs = cover(vw / vh);
+      bgMap = [ax * cs[0], ay * cs[1], (bx - 0.5) * cs[0] + 0.5, (by - 0.5) * cs[1] + 0.5];
+    } else {
+      const cs = cover(canvasAspect);
+      bgMap = [cs[0], cs[1], 0.5 - 0.5 * cs[0], 0.5 - 0.5 * cs[1]];
+    }
 
     const common: Record<string, UniformValue> = {
       ...solver.gridUniforms(),
@@ -120,7 +140,9 @@ export class FluidRenderer {
       uGlass: flask.glass,
       uBevel: Math.min(0.3 * flask.halfSize[1], 0.6),
       uBg: opts.background,
-      uBgScale: bgScale,
+      uBgMap: bgMap,
+      uBgTint: opts.backgroundTint ?? [0, 0, 0, 0],
+      uCutout: opts.page && !opts.transparent ? 1 : 0,
       uTime: opts.time,
       uUp: flask.up,
       uCaustics: this.caustics.target.texture,

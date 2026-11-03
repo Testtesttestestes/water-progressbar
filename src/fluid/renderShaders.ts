@@ -21,7 +21,9 @@ uniform float uFlaskRadius;    // радиус скругления углов
 uniform float uGlass;          // толщина стекла
 uniform float uBevel;          // ширина полосы скругления рёбер
 uniform sampler2D uBg;
-uniform vec2 uBgScale;         // «cover»: масштаб UV фона
+uniform vec4 uBgMap;           // UV фона = uv·xy + zw (cover по холсту или по странице)
+uniform vec4 uBgTint;          // цвет и непрозрачность панели под колбой
+uniform int uCutout;           // 1 — вне колбы холст прозрачный (фон выровнен со страницей)
 uniform float uTime;
 
 // Сетка решателя (для выборки level set воды).
@@ -52,8 +54,10 @@ uniform int uBgMode;
 uniform vec3 uBgColor;
 vec3 background(vec2 uv) {
     if (uBgMode == 1) return uBgColor;
-    vec2 bgUV = (uv - 0.5) * uBgScale + 0.5;
-    return texture(uBg, clamp(bgUV, vec2(0.002), vec2(0.998))).rgb;
+    vec2 bgUV = uv * uBgMap.xy + uBgMap.zw;
+    vec3 c = texture(uBg, clamp(bgUV, vec2(0.002), vec2(0.998))).rgb;
+    // Полупрозрачная панель между обоями и колбой (стекло Frutiger Aero и т. п.).
+    return mix(c, uBgTint.rgb, uBgTint.a);
 }
 // Окружение для отражений. Без фона — мягкая «студия»: светлый верх, тёплый
 // тёмный низ. Отражение не должно зависеть от uBgColor, иначе оно стало бы прозрачностью.
@@ -159,7 +163,7 @@ void main() {
     float sdO = flaskSd(local);            // внешнее стекло
     float sdI = sdO + uGlass;              // полость
     vec3 outside = background(uv);
-    if (sdO > 2.0 * pw) { outColor = vec4(outside, 1.0); return; }
+    if (sdO > 2.0 * pw) { outColor = uCutout == 1 ? vec4(0.0) : vec4(outside, 1.0); return; }
 
     vec2 nL = flaskNormal(local);          // внешняя нормаль контура (система колбы)
     vec2 nW = localToWorldDir(nL);         // она же в мире
@@ -279,7 +283,8 @@ void main() {
 
     // Сглаживание внешнего края.
     float edge = smoothstep(-pw, pw, sdO);
-    outColor = vec4(mix(col, outside, edge), 1.0);
+    // Вырез: снаружи колбы — прозрачность (там и так видна та же страница).
+    outColor = uCutout == 1 ? vec4(col * (1.0 - edge), 1.0 - edge) : vec4(mix(col, outside, edge), 1.0);
 }`;
 
 // Блики стекла поверх всего (аддитивно).
