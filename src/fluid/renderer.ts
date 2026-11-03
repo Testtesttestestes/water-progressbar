@@ -1,5 +1,5 @@
 import { Program, Target, drawFullscreen, UniformValue } from './gl';
-import { FS_BLUR_PHI, FS_HIGHLIGHTS, FS_SCENE, FS_BUBBLES, VS_BUBBLES, VS_FULLSCREEN_RENDER, VS_DROPS, FS_DROPS, FS_COPY, VS_WHITEWATER, FS_WHITEWATER_SPLAT, FS_WHITEWATER_COMPOSITE } from './renderShaders';
+import { FS_BLUR_PHI, FS_HIGHLIGHTS, FS_SCENE, FS_BUBBLES, VS_BUBBLES, VS_FULLSCREEN_RENDER, VS_DROPS, FS_DROPS, FS_COPY, FS_MATTE, VS_WHITEWATER, FS_WHITEWATER_SPLAT, FS_WHITEWATER_COMPOSITE } from './renderShaders';
 import { BUBBLE_COUNT, Bubbles } from './bubbles';
 import { Caustics } from './caustics';
 import { SPRAY_COUNT, Spray } from './spray';
@@ -36,6 +36,9 @@ export class FluidRenderer {
   private whiteComposite: Program;
   private whiteDensity: Target | null = null;
   private sceneTarget: Target | null = null;
+  private matteBlack: Target | null = null;
+  private matteWhite: Target | null = null;
+  private matte: Program;
   private blurTemp: Target | null = null;
   private caustics: Caustics | null = null;
   private causticsFor: FluidSolver | null = null;
@@ -47,6 +50,7 @@ export class FluidRenderer {
     this.blur = new Program(gl, VS_FULLSCREEN_RENDER, FS_BLUR_PHI);
     this.drops = new Program(gl, VS_DROPS, FS_DROPS);
     this.copy = new Program(gl, VS_FULLSCREEN_RENDER, FS_COPY);
+    this.matte = new Program(gl, VS_FULLSCREEN_RENDER, FS_MATTE);
     this.whiteSplat = new Program(gl, VS_WHITEWATER, FS_WHITEWATER_SPLAT);
     this.whiteComposite = new Program(gl, VS_FULLSCREEN_RENDER, FS_WHITEWATER_COMPOSITE);
   }
@@ -70,6 +74,9 @@ export class FluidRenderer {
 
   render(opts: {
     solver: FluidSolver;
+    /** Прозрачный режим: фон не рисуется, холст с альфой — колбу можно положить
+     *  поверх любого интерфейса. background тогда не используется. */
+    transparent?: boolean;
     bubbles: Bubbles | null;
     spray?: Spray | null;
     whitewater?: Whitewater | null;
@@ -128,9 +135,28 @@ export class FluidRenderer {
     }
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
-    this.sceneTarget.bind();
-    this.scene.use(common);
-    drawFullscreen(gl);
+    if (opts.transparent) {
+      for (const key of ['matteBlack', 'matteWhite'] as const) {
+        const t = this[key];
+        if (!t || t.width !== width || t.height !== height) {
+          t?.dispose();
+          this[key] = new Target(gl, width, height, ['RGBA8']);
+        }
+      }
+      this.matteBlack!.bind();
+      this.scene.use({ ...common, uBgMode: 1, uBgColor: [0, 0, 0] });
+      drawFullscreen(gl);
+      this.matteWhite!.bind();
+      this.scene.use({ ...common, uBgMode: 1, uBgColor: [1, 1, 1] });
+      drawFullscreen(gl);
+      this.sceneTarget.bind();
+      this.matte.use({ uBlack: this.matteBlack!.texture, uWhite: this.matteWhite!.texture });
+      drawFullscreen(gl);
+    } else {
+      this.sceneTarget.bind();
+      this.scene.use({ ...common, uBgMode: 0 });
+      drawFullscreen(gl);
+    }
     // Копия на экран проходом, а не blitFramebuffer: тот не пишет в
     // экранный буфер со сглаживанием (multisample).
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -167,7 +193,7 @@ export class FluidRenderer {
     if (opts.spray) {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       const [a, b] = opts.spray.textures;
-      this.drops.use({ ...common, uSprayA: a, uSprayB: b, uShutter: 1 / 60, uSceneTex: this.sceneTarget.texture });
+      this.drops.use({ ...common, uBgMode: opts.transparent ? 1 : 0, uSprayA: a, uSprayB: b, uShutter: 1 / 60, uSceneTex: this.sceneTarget.texture });
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, SPRAY_COUNT);
     }
     gl.blendFunc(gl.ONE, gl.ONE);
@@ -185,6 +211,9 @@ export class FluidRenderer {
     this.caustics?.dispose();
     this.drops.dispose();
     this.copy.dispose();
+    this.matte.dispose();
+    this.matteBlack?.dispose();
+    this.matteWhite?.dispose();
     this.whiteSplat.dispose();
     this.whiteComposite.dispose();
     this.whiteDensity?.dispose();
