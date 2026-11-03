@@ -10,7 +10,7 @@ const SWAY_FREQ = 0.8;      // рад/с
 const ROCK_AMP = 0.1;       // медленное покачивание, рад
 const ROCK_FREQ = 1.2;      // рад/с
 const RESONANT_AMP = 0.009; // мелкая раскачка рядом с собственной частотой воды, рад
-const WAVE_RAMP = 0.6;      // с, выход раскачивания на полную амплитуду
+const WAVE_RAMP = 0.6;      // с, выход раскачивания на полную амплитуду (по умолчанию)
 const TILT_OMEGA = 6.0;     // рад/с, «жёсткость» привода наклона (критическое демпфирование)
 
 export interface MotionTargets {
@@ -34,17 +34,26 @@ export interface Kinematics {
 export class FlaskMotion {
   private time = 0;
   private amp = 0;
+  /** Линейный ход раскачки 0..1; амплитуда — его smoothstep (мягкий старт и выход). */
+  private ramp = 0;
   private tilt: number;
   private tiltVel = 0;
   private resonantPhase = 0;
 
-  constructor(initialTilt = 0, private centerY = 0) {
+  /**
+   * @param waveRamp за сколько секунд волны выходят на полную амплитуду (и затихают).
+   */
+  constructor(initialTilt = 0, private centerY = 0, private waveRamp = WAVE_RAMP) {
     this.tilt = initialTilt;
   }
 
   step(dt: number, targets: MotionTargets): Kinematics {
     this.time += dt;
-    this.amp += ((targets.waving ? 1 : 0) - this.amp) * (1 - Math.exp(-dt / WAVE_RAMP));
+    // Раскачка нарастает по smoothstep: в начале ускорения колбы почти нет, поэтому
+    // вода трогается мягко, без толчка, как при плавном начале качания рукой.
+    const rate = dt / Math.max(this.waveRamp, 1e-3);
+    this.ramp = targets.waving ? Math.min(this.ramp + rate, 1) : Math.max(this.ramp - rate, 0);
+    this.amp = this.ramp * this.ramp * (3 - 2 * this.ramp);
 
     // Привод наклона: критически демпфированная пружина (без рывков и перелёта).
     const tiltAcc = TILT_OMEGA * TILT_OMEGA * (targets.tilt - this.tilt) - 2 * TILT_OMEGA * this.tiltVel;
