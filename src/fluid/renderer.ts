@@ -82,7 +82,7 @@ export class FluidRenderer {
      * его часть (pageRect: x, y, w, h в CSS-пикселях от левого верхнего угла окна,
      * viewport: размер окна). Вне колбы холст прозрачный.
      */
-    page?: { rect: [number, number, number, number]; viewport: [number, number] };
+    page?: { rect: [number, number, number, number]; viewport: [number, number]; fit?: 'cover' | 'stretch' };
     /** Цвет (0..1) и непрозрачность панели, лежащей между фоном и колбой. */
     backgroundTint?: [number, number, number, number];
     bubbles: Bubbles | null;
@@ -120,7 +120,8 @@ export class FluidRenderer {
       const [rx, ry, rw, rh] = opts.page.rect, [vw, vh] = opts.page.viewport;
       const ax = rw / vw, bx = rx / vw;
       const ay = rh / vh, by = 1 - (ry + rh) / vh;
-      const cs = cover(vw / vh);
+      // stretch — текстура и есть этот прямоугольник (снимок DOM-элемента).
+      const cs: [number, number] = opts.page.fit === 'stretch' ? [1, 1] : cover(vw / vh);
       bgMap = [ax * cs[0], ay * cs[1], (bx - 0.5) * cs[0] + 0.5, (by - 0.5) * cs[1] + 0.5];
     } else {
       const cs = cover(canvasAspect);

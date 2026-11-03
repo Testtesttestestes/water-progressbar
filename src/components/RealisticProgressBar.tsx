@@ -5,7 +5,8 @@ import { Bubbles } from '../fluid/bubbles';
 import { Spray } from '../fluid/spray';
 import { Whitewater } from '../fluid/whitewater';
 import { EARTH_GRAVITY, FlaskMotion, rotate, sloshingFrequency } from '../fluid/motion';
-import { BackgroundTexture, createFallbackBackground, loadBackground, textureFromSource } from '../fluid/background';
+import { BackgroundTexture, createFallbackBackground, loadBackground, textureFromSource, updateTexture } from '../fluid/background';
+import { DomBackdrop } from '../fluid/backdrop';
 
 interface RealisticProgressBarProps {
   /** Доля воды 0..1. */
@@ -40,6 +41,16 @@ interface RealisticProgressBarProps {
    */
   backgroundTint?: [number, number, number, number];
   /**
+   * Элемент страницы, который виден сквозь колбу (панель с кнопками, окно
+   * приложения). Его снимок — с текстом, кнопками и картинками на них —
+   * преломляется в стекле и воде; обновляется, когда элемент меняется (DOM,
+   * наведение, прокрутка). Вне колбы холст прозрачный. Перекрывает background.
+   * Картинки внутри должны быть с того же сайта (или data:), иначе их не снять.
+   */
+  backdrop?: HTMLElement | null;
+  /** Как часто можно переснимать backdrop, мс. */
+  backdropInterval?: number;
+  /**
    * true — холст на весь экран (демо); false — заполняет родителя
    * (родитель должен иметь размер и position: relative), камера держит колбу в кадре.
    */
@@ -67,6 +78,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   background: backgroundUrl = BACKGROUND_URL,
   backgroundFit = 'cover',
   backgroundTint,
+  backdrop = null,
+  backdropInterval = 250,
   fullscreen = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,7 +95,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const transparent = backgroundUrl === null;
+    const transparent = backgroundUrl === null && !backdrop;
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: true });
     if (!gl) {
       console.error('WebGL2 unsupported.');
@@ -116,7 +129,8 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
 
     let background: BackgroundTexture = createFallbackBackground(gl);
     let disposed = false;
-    if (typeof backgroundUrl === 'string') loadBackground(gl, backgroundUrl)
+    if (backdrop) { /* фон — снимок страницы, картинка не нужна */ }
+    else if (typeof backgroundUrl === 'string') loadBackground(gl, backgroundUrl)
       .then((bg) => {
         if (disposed) {
           gl.deleteTexture(bg.texture);
@@ -159,6 +173,18 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
       const target = 1.08 * Math.max(bh, bw / aspect);
       viewHeight = viewHeight === 0 ? target : viewHeight + (target - viewHeight) * 0.05;
       return { center: [0, FLASK_CENTER_Y] as [number, number], height: viewHeight };
+    };
+
+    // Снимок живой страницы под колбой (кнопки, картинки, текст).
+    const dom = backdrop ? new DomBackdrop(backdrop, (node) => node === canvas, backdropInterval, 1, canvas) : null;
+    let domVersion = 0;
+    const backdropRect = () => {
+      const c = canvas.getBoundingClientRect(), e = backdrop!.getBoundingClientRect();
+      return {
+        rect: [c.left - e.left, c.top - e.top, c.width, c.height] as [number, number, number, number],
+        viewport: [Math.max(e.width, 1), Math.max(e.height, 1)] as [number, number],
+        fit: 'stretch' as const,
+      };
     };
 
     const pageRect = () => {
@@ -210,6 +236,14 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         simTime += SIM_DT;
       }
 
+      if (dom) {
+        dom.tick(now);
+        const snap = dom.snapshot;
+        if (snap && snap.version !== domVersion) {
+          domVersion = snap.version;
+          updateTexture(gl, background, snap.canvas);
+        }
+      }
       renderer.render({
         solver, bubbles, spray, whitewater,
         background: background.texture, backgroundSize: background.size,
@@ -217,9 +251,10 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
         flask: { position: kin.position, angle: kin.angle, halfSize: [halfX, halfY], radius, glass, up: rotate(-kin.angle, [0, 1]) },
         camera: fullscreen ? { center: [0, 0], height: VIEW_HEIGHT } : fitCamera(),
         time: simTime,
-        transparent,
+        // Пока первого снимка страницы нет — прозрачный режим, а не градиент.
+        transparent: transparent || (!!dom && !dom.snapshot),
         backgroundTint: params.backgroundTint,
-        page: backgroundFit === 'page' && !transparent ? pageRect() : undefined,
+        page: dom && dom.snapshot ? backdropRect() : backgroundFit === 'page' && !transparent ? pageRect() : undefined,
         gravity: g,
         agitation: waviness,
       });
@@ -230,6 +265,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
+      dom?.dispose();
       gl.deleteTexture(background.texture);
       solver.dispose();
       bubbles.dispose();
@@ -237,7 +273,7 @@ export const RealisticProgressBar: React.FC<RealisticProgressBarProps> = ({
       whitewater.dispose();
       renderer.dispose();
     };
-  }, [halfX, halfY, radius, glass, resolution, backgroundUrl, backgroundFit, fullscreen]);
+  }, [halfX, halfY, radius, glass, resolution, backgroundUrl, backgroundFit, fullscreen, backdrop, backdropInterval]);
 
   return (
     <canvas
