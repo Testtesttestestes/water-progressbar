@@ -300,6 +300,18 @@ void main() {
 // Так реинициализация не сдвигает границу — иначе (поправка Russo–Smereka и др.)
 // мельчайший зигзаг поверхности через скачок давления превращался в течение и
 // раскачивал воду сам собой.
+//
+// У стекла и края сетки сосед — линейное продолжение изнутри (NEIGHBOR), но с двумя
+// оговорками, иначе у стенки держалась бы несуществующая поверхность:
+//   — граничной ячейка считается, только если граница проходит к настоящему соседу.
+//     Продолжение 2φ − φ_изнутри меняет знак, если φ растёт к стеклу: ячейка у дна
+//     с φ ≈ −0.1h «видела» за стеклом воздух и навсегда замораживалась;
+//   — продолжение за стеклом не может быть ближе к границе, чем сама ячейка: за
+//     стеклом поверхности нет, расстояние у стенки считается изнутри. Иначе φ,
+//     растущее к стеклу, — неподвижная точка схемы (|∇φ| = 1), и такой «гребень»
+//     не рассасывался никогда.
+// Так было после волны, обнажившей дно: у стекла оставался след контактной линии
+// (φ ≈ 0), и у нижней стенки рисовались линии поверхности — полости и «пузыри» на дне.
 export const FS_REINIT = `${COMMON}
 ${NEIGHBOR}
 uniform sampler2D uPhi;
@@ -307,23 +319,32 @@ uniform sampler2D uPhi0;
 uniform sampler2D uGeo;
 uniform float uDtau;
 float sq(float x) { return x * x; }
+// Сосед для реинициализации: за стеклом — продолжение, но не ближе к границе, чем центр.
+float wallNeighbor(sampler2D phi, sampler2D geo, ivec2 c, ivec2 d, float center) {
+    float v = neighbor(phi, geo, c, d, center);
+    if (isFluid(geo, c + d)) return v;
+    return center < 0.0 ? min(v, center) : max(v, center);
+}
+// Граница проходит между ячейкой и настоящим (не продолженным) соседом.
+bool crosses(sampler2D phi, sampler2D geo, ivec2 c, ivec2 d, float center) {
+    return isFluid(geo, c + d) && center * texelFetch(phi, c + d, 0).x <= 0.0;
+}
 void main() {
     ivec2 c = ivec2(gl_FragCoord.xy);
     float phi = cellAt(uPhi, c);
     if (texelFetch(uGeo, c, 0).z <= 0.0) { o = vec4(phi); return; }
 
     float p0 = cellAt(uPhi0, c);
-    float p0L = neighbor(uPhi0, uGeo, c, ivec2(-1, 0), p0), p0R = neighbor(uPhi0, uGeo, c, ivec2(1, 0), p0);
-    float p0B = neighbor(uPhi0, uGeo, c, ivec2(0, -1), p0), p0T = neighbor(uPhi0, uGeo, c, ivec2(0, 1), p0);
     float s = p0 > 0.0 ? 1.0 : (p0 < 0.0 ? -1.0 : 0.0);
 
-    if (p0 * p0L <= 0.0 || p0 * p0R <= 0.0 || p0 * p0B <= 0.0 || p0 * p0T <= 0.0) {
+    if (p0 == 0.0 || crosses(uPhi0, uGeo, c, ivec2(-1, 0), p0) || crosses(uPhi0, uGeo, c, ivec2(1, 0), p0)
+        || crosses(uPhi0, uGeo, c, ivec2(0, -1), p0) || crosses(uPhi0, uGeo, c, ivec2(0, 1), p0)) {
         o = vec4(p0);
         return;
     }
 
-    float pL = neighbor(uPhi, uGeo, c, ivec2(-1, 0), phi), pR = neighbor(uPhi, uGeo, c, ivec2(1, 0), phi);
-    float pB = neighbor(uPhi, uGeo, c, ivec2(0, -1), phi), pT = neighbor(uPhi, uGeo, c, ivec2(0, 1), phi);
+    float pL = wallNeighbor(uPhi, uGeo, c, ivec2(-1, 0), phi), pR = wallNeighbor(uPhi, uGeo, c, ivec2(1, 0), phi);
+    float pB = wallNeighbor(uPhi, uGeo, c, ivec2(0, -1), phi), pT = wallNeighbor(uPhi, uGeo, c, ivec2(0, 1), phi);
     float a = (phi - pL) / uH, b = (pR - phi) / uH, cc = (phi - pB) / uH, d = (pT - phi) / uH;
     float G;
     if (p0 > 0.0)
